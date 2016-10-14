@@ -1,6 +1,6 @@
 
 cd %appdata%
-bitsadmin /transfer "SEL Download" https://raw.githubusercontent.com/Kripth/sel-manager/master/manager.d manager.d
+bitsadmin /transfer "SEL Download" https://raw.githubusercontent.com/sel-project/sel-manager/master/manager.d manager.d
 rdmd --build-only manager.d
 rename manager.exe sel.exe
 del manager.d

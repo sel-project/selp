@@ -30,8 +30,9 @@ import std.typecons : Tuple, tuple;
 
 alias ServerTuple = Tuple!(string, "name", string, "location", string, "type");
 
-enum __MANAGER__ = "3.2.42";
+enum __MANAGER__ = "3.2.46";
 enum __WEBSITE__ = "http://downloads.selproject.org/";
+enum __WEBSITE_COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
 
 version(Windows) {
 	enum __NEW_LINE__ = "\r\n";
@@ -136,7 +137,6 @@ void main(string[] args) {
 					if(!exists(exe) || force) {
 						if(exists(exe)) remove(exe);
 						if(server.type == "node") {
-							wait(spawnShell("cd " ~ server.location ~ " && cd"));
 							wait(spawnShell("cd " ~ server.location ~ " && rdmd -version=NoRead init.d"));
 							string versions = cast(string)read(server.location ~ "plugins" ~ dirSeparator ~ ".versions");
 							string games = "-version=Pocket -version=Minecraft";
@@ -561,7 +561,7 @@ string launchComponent(bool spawn=false)(string component, string[] args) {
 		immutable runnable = "./" ~ component;
 	}
 	if(!exists(Settings.CONFIG ~ "components" ~ dirSeparator ~ component ~ ext)) {
-		//download(__WEBSITE__ ~ "manager_" ~ component ~ ".d", Settings.CONFIG ~ "components" ~ dirSeparator ~ component ~ ".d");
+		download(__WEBSITE_COMPONENTS__ ~ component ~ ".d", Settings.CONFIG ~ "components" ~ dirSeparator ~ component ~ ".d");
 		wait(spawnShell("cd " ~ Settings.CONFIG ~ "components && rdmd --build-only " ~ component ~ ".d"));
 		remove(Settings.CONFIG ~ "components" ~ dirSeparator ~ component ~ ".d");
 	}
