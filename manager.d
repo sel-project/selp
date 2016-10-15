@@ -21,7 +21,7 @@ import std.base64 : Base64;
 import std.conv : to;
 import std.file;
 import std.json;
-import std.net.curl : get, download;
+import std.net.curl : get, download, CurlException;
 import std.path : dirSeparator, pathSeparator;
 import std.process;
 import std.stdio : writeln, readln;
@@ -30,9 +30,10 @@ import std.typecons : Tuple, tuple;
 
 alias ServerTuple = Tuple!(string, "name", string, "location", string, "type");
 
-enum __MANAGER__ = "3.2.50";
+enum __MANAGER__ = "3.2.64";
 enum __WEBSITE__ = "http://downloads.selproject.org/";
-enum __WEBSITE_COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
+enum __COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
+enum __UTILS__ = "https://raw.githubusercontent.com/sel-project/sel-utils/master/release.sa";
 
 version(Windows) {
 	enum __NEW_LINE__ = "\r\n";
@@ -42,9 +43,9 @@ version(Windows) {
 	enum __EXECUTABLE__ = "main";
 }
 
-enum commands = ["about", "build", "connect", "console", "convert", "delete", "init", "list", "locate", "ping", "query", "shortcut", "start", "update"];
+enum commands = ["about", "build", "connect", "console", "convert", "delete", "init", "list", "locate", "ping", "query", "rcon", "start", "update"];
 
-enum noname = ["sel", "manager", "lib", "libs", "util", "utils"];
+enum noname = ["*", "all", "sel", "this", "manager", "lib", "libs", "util", "utils"];
 
 struct Settings {
 	
@@ -54,6 +55,7 @@ struct Settings {
 	public static string config;
 	public static string cache;
 	public static string servers;
+	public static string utils;
 	
 }
 
@@ -68,6 +70,7 @@ void main(string[] args) {
 	Settings.config = Settings.home ~ ".sel" ~ dirSeparator;
 	Settings.cache = Settings.config ~ "versions" ~ dirSeparator;
 	Settings.servers = Settings.home ~ "sel" ~ dirSeparator;
+	Settings.utils = Settings.config ~ "utils" ~ dirSeparator; 
 	
 	string launch = args[0];
 	args = args[1..$];
@@ -86,13 +89,14 @@ void main(string[] args) {
 			writeln("  about   \tprint informations about a server");
 			writeln("  build   \tbuild a server");
 			writeln("  connect \tstart a node server and connect it to an hub");
-			writeln("  console \tconnect to a SEL server throught the external console protocol");
+			writeln("  console \tconnect to a server throught the external console protocol");
 			writeln("  delete  \tdelete a server");
 			writeln("  init    \tcreate a new server");
 			writeln("  list    \tlist every registered server");
 			writeln("  locate  \tprint the location of a server");
 			writeln("  ping    \tping a server (not necessarily a sel one)");
 			writeln("  query   \tquery a server (not necessarily a sel one)");
+			writeln("  rcon    \tconnect to a server through the rcon protocol");
 			version(linux) {
 				writeln("  shortcut\tcreate a shortcut for a server (requires root permissions)");
 			}
@@ -187,24 +191,36 @@ void main(string[] args) {
 			}
 			break;
 		case "compress":
-			// sel compress <dir> <output-file>
+			// sel compress <dir> <output-file> <compression=6>
+			immutable odir = args[2].indexOf(dirSeparator) >= 0 ? args[2].split(dirSeparator)[0..$-1].join(dirSeparator) : ".";
 			version(Windows) {
-				immutable dir = executeShell("cd " ~ args[1] ~ " && cd").output.strip;
+				immutable input = executeShell("cd " ~ args[1] ~ " && cd").output.strip;
+				immutable output = executeShell("cd " ~ odir ~ " && cd").output.strip;
 			} else {
-				immutable dir = executeShell("cd " ~ args[1] ~ " && pwd").output.strip;
+				immutable input = executeShell("cd " ~ args[1] ~ " && pwd").output.strip;
+				immutable output = executeShell("cd " ~ odir ~ " && pwd").output.strip;
+			}
+			string[] ignore = [".selignore"];
+			if(exists(input ~ dirSeparator ~ ".selignore")) {
+				foreach(string line ; (cast(string)read(input ~ dirSeparator ~ ".selignore")).split("\n")) {
+					line = line.strip;
+					if(line != "") {
+						ignore ~= line.replace("/", dirSeparator);
+					}
+				}
 			}
 			string file;
-			foreach(string path ; dirEntries(dir, SpanMode.breadth)) {
-				if(path.isFile) {
+			foreach(string path ; dirEntries(input, SpanMode.breadth)) {
+				if(path.isFile && !in_array(path, ignore)) {
 					string content = cast(string)read(path);
-					file ~= path[dir.length+1..$].replace(dirSeparator, "/") ~ "\n" ~ to!string(content.length) ~ "\n" ~ content;
+					file ~= path[input.length+1..$].replace(dirSeparator, "/") ~ "\n" ~ to!string(content.length) ~ "\n" ~ content;
 				}
 			}
 			import std.zlib : Compress;
-			Compress compress = new Compress(6);
+			Compress compress = new Compress(args.length > 3 ? to!uint(args[3]) : 6);
 			ubyte[] data = cast(ubyte[])compress.compress(file);
 			data ~= cast(ubyte[])compress.flush();
-			write(args[2].endsWith(".sa") ? args[2] : args[2] ~ ".sa", data);
+			write(output.endsWith(".sa") ? output : output ~ ".sa", data);
 			break;
 		case "connect":
 			if(args.length > 1) {
@@ -418,26 +434,27 @@ void main(string[] args) {
 				writeln("Use '", launch, " query <ip>[:<port>]'");
 			}
 			break;
-		case "shortcut":
-			version(linux) {
-				if(args.length > 1) {
-					auto server = getServerByName(args[1].toLower);
-					if(server.name != "") {
-						write(server.location ~ "script.d", "module script;import std.process;import std.string;void main(string[] args){args[0]=\"" ~ server.name ~ "\";wait(spawnShell(\"sel \"~args.join(\" \")));}");
-						wait(spawnShell("cd " ~ server.location ~ " && rdmd --build-only -release script.d"));
-						remove(server.location ~ "script.d");
-						wait(spawnShell("sudo mv " ~ server.location ~ "script /usr/bin/" ~ server.name));
-						writeln("You can now use '", server.name, " <command> <options>' as a shortcut for 'sel <command> ", server.name, " <options>'");
-					} else {
-						writeln("There's no server named \"", args[1].toLower, "\"");
-					}
+		case "rcon":
+			writeln("This functionality is not available yet");
+			break;
+		version(linux) {
+			case "shortcut":
+			if(args.length > 1) {
+				auto server = getServerByName(args[1].toLower);
+				if(server.name != "") {
+					write(server.location ~ "script.d", "module script;import std.process;import std.string;void main(string[] args){args[0]=\"" ~ server.name ~ "\";wait(spawnShell(\"sel \"~args.join(\" \")));}");
+					wait(spawnShell("cd " ~ server.location ~ " && rdmd --build-only -release script.d"));
+					remove(server.location ~ "script.d");
+					wait(spawnShell("sudo mv " ~ server.location ~ "script /usr/bin/" ~ server.name));
+					writeln("You can now use '", server.name, " <command> <options>' as a shortcut for 'sel <command> ", server.name, " <options>'");
 				} else {
-					writeln("Use: '", launch, " shortcut <server-name>");
+					writeln("There's no server named \"", args[1].toLower, "\"");
 				}
 			} else {
-				writeln("This command is only available on Linux operative systems");
+				writeln("Use: '", launch, " shortcut <server-name>");
 			}
 			break;
+		}
 		case "start":
 			if(args.length > 1) {
 				auto server = getServerByName(args[1].toLower);
@@ -454,18 +471,64 @@ void main(string[] args) {
 				writeln("Use: '", launch, " start <hub-name> [<port>=28232]'"); //TODO custom port
 			}
 			break;
+		case "uncompress":
+			// sel uncompress <archive> <dir>
+			version(Windows) {
+				immutable output = executeShell("cd " ~ args[2] ~ " && cd").output.strip ~ r"\";
+			} else {
+				immutable output = executeShell("cd " ~ args[2] ~ " && pwd").output.strip ~ "/";
+			}
+			import std.zlib : UnCompress;
+			UnCompress uncompress = new UnCompress();
+			ubyte[] data = cast(ubyte[])uncompress.uncompress(read(args[1]));
+			data ~= cast(ubyte[])uncompress.flush();
+			string file = cast(string)data;
+			while(file.length > 0) {
+				string pname = file[0..file.indexOf("\n")].replace("/", dirSeparator);
+				file = file[file.indexOf("\n")+1..$];
+				size_t length = to!size_t(file[0..file.indexOf("\n")]);
+				file = file[file.indexOf("\n")+1..$];
+				string content = file[0..length];
+				file = file[length..$];
+				if(pname.indexOf(dirSeparator) >= 0) {
+					mkdirRecurse(output ~ pname.split(dirSeparator)[0..$-1].join(dirSeparator));
+				}
+				write(output ~ pname, content);
+			}
+			break;
 		case "update":
-			if(args.length >= 1) {
+			if(args.length > 1) {
 				immutable name = args[1].toLower;
-				if(name == "sel") {
-					// update manager
-				} else if(in_array(name, ["lib", "libs", "util", "utils"])) {
-					// update libraries
-				} else {
-					// update server
+				switch(name) {
+					case "*":
+					case "all":
+						wait(spawnShell("sel update sel"));
+						wait(spawnShell("sel update libs"));
+						// update every server
+						break;
+					case "sel":
+					case "this":
+					case "manager":
+						// update manager
+						// delete components
+						foreach(string component ; dirEntries(Settings.config ~ "components", SpanMode.breadth)) {
+							if(component.isFile) remove(component);
+						}
+						break;
+					case "lib":
+					case "libs":
+					case "util":
+					case "utils":
+						systemDownload(__UTILS__, Settings.config ~ "utils.sa");
+						wait(spawnShell("cd " ~ Settings.config ~ " && sel uncompress utils.sa utils"));
+						remove(Settings.config ~ "utils.sa");
+						break;
+					default:
+						// update server
+						break;
 				}
 			} else {
-				writeln("Use: '", launch, " update sel|lib|<server-name> [<version>=latest]'");
+				writeln("Use: '", launch, " update sel|utils|<server-name>|* [<version>=latest]'");
 			}
 			break;
 		case "website":
@@ -579,9 +642,15 @@ string launchComponent(bool spawn=false)(string component, string[] args) {
 		immutable runnable = "./" ~ component;
 	}
 	if(!exists(Settings.config ~ "components" ~ dirSeparator ~ component ~ ext)) {
-		download(__WEBSITE_COMPONENTS__ ~ component ~ ".d", Settings.config ~ "components" ~ dirSeparator ~ component ~ ".d");
-		wait(spawnShell("cd " ~ Settings.config ~ "components && rdmd --build-only " ~ component ~ ".d"));
-		remove(Settings.config ~ "components" ~ dirSeparator ~ component ~ ".d");
+		try {
+			//download(__COMPONENTS__ ~ component ~ ".d", Settings.config ~ "components" ~ dirSeparator ~ component ~ ".d");
+			systemDownload(__COMPONENTS__ ~ component ~ ".d", Settings.config ~ "components" ~ dirSeparator ~ component ~ ".d");
+			wait(spawnShell("cd " ~ Settings.config ~ "components && rdmd --build-only " ~ component ~ ".d"));
+			remove(Settings.config ~ "components" ~ dirSeparator ~ component ~ ".d");
+		} catch(CurlException e) {
+			writeln("Cannot download from ", __COMPONENTS__, component, ".d: ", e.msg);
+			return "{}";
+		}
 	}
 	immutable cmd = "cd " ~ Settings.config ~ "components && " ~ runnable ~ " " ~ args.join(" ").replace("\"", "\\\"");
 	static if(spawn) {
@@ -589,6 +658,14 @@ string launchComponent(bool spawn=false)(string component, string[] args) {
 		return "";
 	} else {
 		return executeShell(cmd).output.strip;
+	}
+}
+
+void systemDownload(string file, string dest) {
+	version(Windows) {
+		wait(spawnShell("bitsadmin /transfer \"SEL Manager Download\" " ~ file ~ " " ~ dest));
+	} else {
+		wait(spawnShell("wget " ~ file ~ " -O " ~ dest));
 	}
 }
 
