@@ -21,7 +21,7 @@ import std.base64 : Base64;
 import std.conv : to;
 import std.file;
 import std.json;
-import std.net.curl : get, download, CurlException;
+import std.net.curl : get, download;
 import std.path : dirSeparator, pathSeparator;
 import std.process;
 import std.stdio : writeln, readln;
@@ -30,7 +30,7 @@ import std.typecons : Tuple, tuple;
 
 alias ServerTuple = Tuple!(string, "name", string, "location", string, "type");
 
-enum __MANAGER__ = "3.2.64";
+enum __MANAGER__ = "3.2.66";
 enum __WEBSITE__ = "http://downloads.selproject.org/";
 enum __COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
 enum __UTILS__ = "https://raw.githubusercontent.com/sel-project/sel-utils/master/release.sa";
@@ -194,12 +194,15 @@ void main(string[] args) {
 			// sel compress <dir> <output-file> <compression=6>
 			immutable odir = args[2].indexOf(dirSeparator) >= 0 ? args[2].split(dirSeparator)[0..$-1].join(dirSeparator) : ".";
 			version(Windows) {
-				immutable input = executeShell("cd " ~ args[1] ~ " && cd").output.strip;
-				immutable output = executeShell("cd " ~ odir ~ " && cd").output.strip;
+				immutable input = executeShell("cd " ~ args[1] ~ " && cd").output.strip ~ dirSeparator;
+				immutable o = executeShell("cd " ~ odir ~ " && cd").output.strip;
 			} else {
-				immutable input = executeShell("cd " ~ args[1] ~ " && pwd").output.strip;
-				immutable output = executeShell("cd " ~ odir ~ " && pwd").output.strip;
+				immutable input = executeShell("cd " ~ args[1] ~ " && pwd").output.strip ~ dirSeparator;
+				immutable o = executeShell("cd " ~ odir ~ " && pwd").output.strip;
 			}
+			immutable name = args[2][args[2].indexOf(dirSeparator)+1..$];
+			immutable output = o ~ dirSeparator ~ (name.endsWith(".sa") ? name : name ~ ".sa");
+			writeln("Compressing ", input, " into ", output);
 			string[] ignore = [".selignore"];
 			if(exists(input ~ dirSeparator ~ ".selignore")) {
 				foreach(string line ; (cast(string)read(input ~ dirSeparator ~ ".selignore")).split("\n")) {
@@ -210,17 +213,25 @@ void main(string[] args) {
 				}
 			}
 			string file;
+			size_t count = 0;
 			foreach(string path ; dirEntries(input, SpanMode.breadth)) {
-				if(path.isFile && !in_array(path, ignore)) {
-					string content = cast(string)read(path);
-					file ~= path[input.length+1..$].replace(dirSeparator, "/") ~ "\n" ~ to!string(content.length) ~ "\n" ~ content;
+				immutable fpath = path;
+				if(path.startsWith(input)) path = path[input.length..$];
+				if(fpath.isFile && !in_array(path, ignore)) {
+					writeln("Adding ", path);
+					count++;
+					string content = cast(string)read(fpath);
+					file ~= path.replace(dirSeparator, "/") ~ "\n" ~ to!string(content.length) ~ "\n" ~ content;
 				}
 			}
+			writeln("Added ", count, " files (", file.length, " bytes)");
 			import std.zlib : Compress;
 			Compress compress = new Compress(args.length > 3 ? to!uint(args[3]) : 6);
 			ubyte[] data = cast(ubyte[])compress.compress(file);
 			data ~= cast(ubyte[])compress.flush();
-			write(output.endsWith(".sa") ? output : output ~ ".sa", data);
+			writeln("Compressed into ", data.length, " bytes");
+			write(output, data);
+			writeln("Saved at ", output);
 			break;
 		case "connect":
 			if(args.length > 1) {
@@ -473,11 +484,7 @@ void main(string[] args) {
 			break;
 		case "uncompress":
 			// sel uncompress <archive> <dir>
-			version(Windows) {
-				immutable output = executeShell("cd " ~ args[2] ~ " && cd").output.strip ~ r"\";
-			} else {
-				immutable output = executeShell("cd " ~ args[2] ~ " && pwd").output.strip ~ "/";
-			}
+			immutable output = args[2].endsWith(dirSeparator) ? args[2] : args[2] ~ dirSeparator;
 			import std.zlib : UnCompress;
 			UnCompress uncompress = new UnCompress();
 			ubyte[] data = cast(ubyte[])uncompress.uncompress(read(args[1]));
@@ -642,15 +649,9 @@ string launchComponent(bool spawn=false)(string component, string[] args) {
 		immutable runnable = "./" ~ component;
 	}
 	if(!exists(Settings.config ~ "components" ~ dirSeparator ~ component ~ ext)) {
-		try {
-			//download(__COMPONENTS__ ~ component ~ ".d", Settings.config ~ "components" ~ dirSeparator ~ component ~ ".d");
-			systemDownload(__COMPONENTS__ ~ component ~ ".d", Settings.config ~ "components" ~ dirSeparator ~ component ~ ".d");
-			wait(spawnShell("cd " ~ Settings.config ~ "components && rdmd --build-only " ~ component ~ ".d"));
-			remove(Settings.config ~ "components" ~ dirSeparator ~ component ~ ".d");
-		} catch(CurlException e) {
-			writeln("Cannot download from ", __COMPONENTS__, component, ".d: ", e.msg);
-			return "{}";
-		}
+		systemDownload(__COMPONENTS__ ~ component ~ ".d", Settings.config ~ "components" ~ dirSeparator ~ component ~ ".d");
+		wait(spawnShell("cd " ~ Settings.config ~ "components && rdmd --build-only " ~ component ~ ".d"));
+		remove(Settings.config ~ "components" ~ dirSeparator ~ component ~ ".d");
 	}
 	immutable cmd = "cd " ~ Settings.config ~ "components && " ~ runnable ~ " " ~ args.join(" ").replace("\"", "\\\"");
 	static if(spawn) {
