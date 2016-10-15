@@ -30,7 +30,7 @@ import std.typecons : Tuple, tuple;
 
 alias ServerTuple = Tuple!(string, "name", string, "location", string, "type");
 
-enum __MANAGER__ = "3.2.46";
+enum __MANAGER__ = "3.2.50";
 enum __WEBSITE__ = "http://downloads.selproject.org/";
 enum __WEBSITE_COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
 
@@ -42,37 +42,39 @@ version(Windows) {
 	enum __EXECUTABLE__ = "main";
 }
 
-enum COMMANDS = ["about", "build", "connect", "console", "convert", "delete", "init", "list", "locate", "ping", "query", "shortcut", "start", "update"];
+enum commands = ["about", "build", "connect", "console", "convert", "delete", "init", "list", "locate", "ping", "query", "shortcut", "start", "update"];
+
+enum noname = ["sel", "manager", "lib", "libs", "util", "utils"];
 
 struct Settings {
 	
 	@disable this();
 	
-	public static string HOME;
-	public static string CONFIG;
-	public static string CACHE;
-	public static string SERVERS;
+	public static string home;
+	public static string config;
+	public static string cache;
+	public static string servers;
 	
 }
 
 void main(string[] args) {
-	
+
 	version(Windows) {
-		Settings.HOME = executeShell("echo %appdata%").output.strip;
+		Settings.home = executeShell("echo %appdata%").output.strip;
 	} else {
-		Settings.HOME = executeShell("cd ~ && pwd").output.strip;
+		Settings.home = executeShell("cd ~ && pwd").output.strip;
 	}
-	if(!Settings.HOME.endsWith(dirSeparator)) Settings.HOME ~= dirSeparator;
-	Settings.CONFIG = Settings.HOME ~ ".sel" ~ dirSeparator;
-	Settings.CACHE = Settings.CONFIG ~ "versions" ~ dirSeparator;
-	Settings.SERVERS = Settings.HOME ~ "sel" ~ dirSeparator;
+	if(!Settings.home.endsWith(dirSeparator)) Settings.home ~= dirSeparator;
+	Settings.config = Settings.home ~ ".sel" ~ dirSeparator;
+	Settings.cache = Settings.config ~ "versions" ~ dirSeparator;
+	Settings.servers = Settings.home ~ "sel" ~ dirSeparator;
 	
 	string launch = args[0];
 	args = args[1..$];
 	
 	if(args.length == 0) args ~= "help";
 
-	if(!in_array(args[0], COMMANDS) && args.length > 1 && nameExists(args[0])) {
+	if(!in_array(args[0], commands) && args.length > 1 && nameExists(args[0])) {
 		string c = args[1];
 		args[1] = args[0];
 		args[0] = c;
@@ -282,60 +284,64 @@ void main(string[] args) {
 			if(args.length > 2) {
 				string name = args[1].toLower;
 				string type = args[2].toLower;
-				string path = args.length > 3 ? args[3] : Settings.SERVERS ~ name;
+				string path = args.length > 3 ? args[3] : Settings.servers ~ name;
 				string vers = args.length > 4 ? args[4]: "";
 				if(!nameExists(name)) {
-					if(type == "hub" || type == "node") {
-						// get real path
-						version(Windows) {
-							wait(spawnShell("md " ~ path));
-							path = executeShell("cd " ~ path ~ " && cd").output.strip;
-						} else {
-							wait(spawnShell("mkdir -p " ~ path));
-							path = executeShell("cd " ~ path ~ " && pwd").output.strip;
-						}
-						if(!path.endsWith(dirSeparator)) path ~= dirSeparator;
-						if(vers.toLower != "none") {
-							if(vers == "" || vers.toLower == "latest") vers = get(__WEBSITE__ ~ "latest.txt").idup;
-							vers ~= ".sa";
-							if(!exists(Settings.CACHE ~ vers)) {
-								writeln("Downloading from " ~ __WEBSITE__ ~ vers);
-								mkdirRecurse(Settings.CACHE);
-								download(__WEBSITE__ ~ vers, Settings.CACHE ~ vers);
+					if(in_array(name, noname)) {
+						if(type == "hub" || type == "node") {
+							// get real path
+							version(Windows) {
+								wait(spawnShell("md " ~ path));
+								path = executeShell("cd " ~ path ~ " && cd").output.strip;
+							} else {
+								wait(spawnShell("mkdir -p " ~ path));
+								path = executeShell("cd " ~ path ~ " && pwd").output.strip;
 							}
-							import std.zlib : UnCompress;
-							UnCompress uncompress = new UnCompress();
-							ubyte[] data = cast(ubyte[])uncompress.uncompress(read(Settings.CACHE ~ vers));
-							data ~= cast(ubyte[])uncompress.flush();
-							string file = cast(string)data;
-							while(file.length > 0) {
-								string pname = file[0..file.indexOf("\n")].replace("/", dirSeparator);
-								file = file[file.indexOf("\n")+1..$];
-								size_t length = to!size_t(file[0..file.indexOf("\n")]);
-								file = file[file.indexOf("\n")+1..$];
-								string content = file[0..length];
-								file = file[length..$];
-								if(pname.startsWith(type)) {
-									pname = pname[type.length+1..$];
-									if(pname.indexOf(dirSeparator) >= 0) {
-										mkdirRecurse(path ~ pname.split(dirSeparator)[0..$-1].join(dirSeparator));
+							if(!path.endsWith(dirSeparator)) path ~= dirSeparator;
+							if(vers.toLower != "none") {
+								if(vers == "" || vers.toLower == "latest") vers = get(__WEBSITE__ ~ "latest.txt").idup;
+								vers ~= ".sa";
+								if(!exists(Settings.cache ~ vers)) {
+									writeln("Downloading from " ~ __WEBSITE__ ~ vers);
+									mkdirRecurse(Settings.cache);
+									download(__WEBSITE__ ~ vers, Settings.cache ~ vers);
+								}
+								import std.zlib : UnCompress;
+								UnCompress uncompress = new UnCompress();
+								ubyte[] data = cast(ubyte[])uncompress.uncompress(read(Settings.cache ~ vers));
+								data ~= cast(ubyte[])uncompress.flush();
+								string file = cast(string)data;
+								while(file.length > 0) {
+									string pname = file[0..file.indexOf("\n")].replace("/", dirSeparator);
+									file = file[file.indexOf("\n")+1..$];
+									size_t length = to!size_t(file[0..file.indexOf("\n")]);
+									file = file[file.indexOf("\n")+1..$];
+									string content = file[0..length];
+									file = file[length..$];
+									if(pname.startsWith(type)) {
+										pname = pname[type.length+1..$];
+										if(pname.indexOf(dirSeparator) >= 0) {
+											mkdirRecurse(path ~ pname.split(dirSeparator)[0..$-1].join(dirSeparator));
+										}
+										write(path ~ pname, content);
 									}
-									write(path ~ pname, content);
-								}
-								if(pname == "LICENSE") {
-									write(path ~ "license.txt", content);
+									if(pname == "LICENSE") {
+										write(path ~ "license.txt", content);
+									}
 								}
 							}
+							saveServerTuples(serverTuples ~ ServerTuple(name, path, type));
+						} else {
+							writeln("Invalid type \"", type, "\". Choose between \"hub\" and \"node\"");
 						}
-						saveServerTuples(serverTuples ~ ServerTuple(name, path, type));
 					} else {
-						writeln("Invalid type \"", type, "\". Choose between \"hub\" and \"node\"");
+						writeln("Cannot name a server \"", name, "\"");
 					}
 				} else {
 					writeln("A server named \"", name, "\" already exists");
 				}
 			} else {
-				writeln("Use '", launch, " init <server-name> <hub|node> [<path>=", Settings.SERVERS, "<name>] [<version>=latest]'");
+				writeln("Use '", launch, " init <server-name> <hub|node> [<path>=", Settings.servers, "<name>] [<version>=latest]'");
 			}
 			break;
 		case "list":
@@ -449,7 +455,18 @@ void main(string[] args) {
 			}
 			break;
 		case "update":
-			writeln("Use: '", launch, " update <server-name> [<version>=latest]'");
+			if(args.length >= 1) {
+				immutable name = args[1].toLower;
+				if(name == "sel") {
+					// update manager
+				} else if(in_array(name, ["lib", "libs", "util", "utils"])) {
+					// update libraries
+				} else {
+					// update server
+				}
+			} else {
+				writeln("Use: '", launch, " update sel|lib|<server-name> [<version>=latest]'");
+			}
 			break;
 		case "website":
 			writeln(__WEBSITE__);
@@ -471,9 +488,10 @@ void printusage() {
 	writeln();
 	writeln("Website: http://selproject.org");
 	writeln("Files: " ~ __WEBSITE__);
+	writeln("Github: https://github.com/sel-project");
 	writeln();
-	writeln("Servers path: ", Settings.SERVERS);
-	writeln("Managed servers: ", Settings.CONFIG, "sel.conf");
+	writeln("Servers path: ", Settings.servers);
+	writeln("Managed servers: ", to!string(serverTuples.length));
 	writeln("Installed components: ", components.join(", "));
 	writeln("Usage:");
 	writeln("  sel <command> <server> [<options>]");
@@ -493,8 +511,8 @@ bool in_array(T)(T value, T[] array) {
 
 @property ServerTuple[] serverTuples() {
 	ServerTuple[] ret;
-	if(exists(Settings.CONFIG ~ "sel.conf")) {
-		foreach(string s ; (cast(string)read(Settings.CONFIG ~ "sel.conf")).split(__NEW_LINE__)) {
+	if(exists(Settings.config ~ "sel.conf")) {
+		foreach(string s ; (cast(string)read(Settings.config ~ "sel.conf")).split(__NEW_LINE__)) {
 			string[] spl = s.split(",");
 			if(spl.length == 3) {
 				ret ~= ServerTuple(cast(string)Base64.decode(spl[0]), spl[1], spl[2]);
@@ -519,12 +537,12 @@ bool in_array(T)(T value, T[] array) {
 }
 
 void saveServerTuples(ServerTuple[] servers) {
-	mkdirRecurse(Settings.CONFIG);
+	mkdirRecurse(Settings.config);
 	string file = "# SEL MANAGER CONFIGURATION FILE" ~ __NEW_LINE__;
 	foreach(ServerTuple server ; servers) {
 		file ~= Base64.encode(cast(ubyte[])server[0]) ~ "," ~ server[1] ~ "," ~ server[2] ~ __NEW_LINE__;
 	}
-	write(Settings.CONFIG ~ "sel.conf", file);
+	write(Settings.config ~ "sel.conf", file);
 }
 
 bool hasCommand(string cmd) {
@@ -536,9 +554,9 @@ bool hasCommand(string cmd) {
 }
 
 string[] components() {
-	if(!exists(Settings.CONFIG ~ "components")) return [];
+	if(!exists(Settings.config ~ "components")) return [];
 	string[] ret;
-	foreach(string path ; dirEntries(Settings.CONFIG ~ "components", SpanMode.breadth)) {
+	foreach(string path ; dirEntries(Settings.config ~ "components", SpanMode.breadth)) {
 		if(path.isFile) {
 			string file = path.split(dirSeparator)[$-1];
 			version(Windows) {
@@ -552,7 +570,7 @@ string[] components() {
 }
 
 string launchComponent(bool spawn=false)(string component, string[] args) {
-	if(!exists(Settings.CONFIG ~ "components")) mkdirRecurse(Settings.CONFIG ~ "components");
+	if(!exists(Settings.config ~ "components")) mkdirRecurse(Settings.config ~ "components");
 	version(Windows) {
 		immutable ext = ".exe";
 		immutable runnable = component ~ ".exe";
@@ -560,12 +578,12 @@ string launchComponent(bool spawn=false)(string component, string[] args) {
 		immutable ext = "";
 		immutable runnable = "./" ~ component;
 	}
-	if(!exists(Settings.CONFIG ~ "components" ~ dirSeparator ~ component ~ ext)) {
-		download(__WEBSITE_COMPONENTS__ ~ component ~ ".d", Settings.CONFIG ~ "components" ~ dirSeparator ~ component ~ ".d");
-		wait(spawnShell("cd " ~ Settings.CONFIG ~ "components && rdmd --build-only " ~ component ~ ".d"));
-		remove(Settings.CONFIG ~ "components" ~ dirSeparator ~ component ~ ".d");
+	if(!exists(Settings.config ~ "components" ~ dirSeparator ~ component ~ ext)) {
+		download(__WEBSITE_COMPONENTS__ ~ component ~ ".d", Settings.config ~ "components" ~ dirSeparator ~ component ~ ".d");
+		wait(spawnShell("cd " ~ Settings.config ~ "components && rdmd --build-only " ~ component ~ ".d"));
+		remove(Settings.config ~ "components" ~ dirSeparator ~ component ~ ".d");
 	}
-	immutable cmd = "cd " ~ Settings.CONFIG ~ "components && " ~ runnable ~ " " ~ args.join(" ").replace("\"", "\\\"");
+	immutable cmd = "cd " ~ Settings.config ~ "components && " ~ runnable ~ " " ~ args.join(" ").replace("\"", "\\\"");
 	static if(spawn) {
 		wait(spawnShell(cmd));
 		return "";
