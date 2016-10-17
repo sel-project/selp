@@ -30,7 +30,7 @@ import std.typecons : Tuple, tuple;
 
 alias ServerTuple = Tuple!(string, "name", string, "location", string, "type");
 
-enum __MANAGER__ = "3.2.66";
+enum __MANAGER__ = "3.2.70";
 enum __WEBSITE__ = "http://downloads.selproject.org/";
 enum __COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
 enum __UTILS__ = "https://raw.githubusercontent.com/sel-project/sel-utils/master/release.sa";
@@ -43,7 +43,7 @@ version(Windows) {
 	enum __EXECUTABLE__ = "main";
 }
 
-enum commands = ["about", "build", "connect", "console", "convert", "delete", "init", "list", "locate", "ping", "query", "rcon", "start", "update"];
+enum commands = ["about", "build", "connect", "console", "convert", "delete", "init", "latest", "list", "locate", "ping", "query", "rcon", "start", "update"];
 
 enum noname = ["*", "all", "sel", "this", "manager", "lib", "libs", "util", "utils"];
 
@@ -92,6 +92,7 @@ void main(string[] args) {
 			writeln("  console \tconnect to a server throught the external console protocol");
 			writeln("  delete  \tdelete a server");
 			writeln("  init    \tcreate a new server");
+			writeln("  latest  \tprint the latest stable version of SEL");
 			writeln("  list    \tlist every registered server");
 			writeln("  locate  \tprint the location of a server");
 			writeln("  ping    \tping a server (not necessarily a sel one)");
@@ -203,12 +204,18 @@ void main(string[] args) {
 			immutable name = args[2][args[2].indexOf(dirSeparator)+1..$];
 			immutable output = o ~ dirSeparator ~ (name.endsWith(".sa") ? name : name ~ ".sa");
 			writeln("Compressing ", input, " into ", output);
-			string[] ignore = [".selignore"];
+			string[] ignore_files = [".selignore"];
+			string[] ignore_dirs = [];
 			if(exists(input ~ dirSeparator ~ ".selignore")) {
 				foreach(string line ; (cast(string)read(input ~ dirSeparator ~ ".selignore")).split("\n")) {
-					line = line.strip;
+					version(Windows) {
+						line = line.strip.replace(r"/", r"\");
+					} else {
+						line = line.strip.replace(r"\", r"/");
+					}
 					if(line != "") {
-						ignore ~= line.replace("/", dirSeparator);
+						if(line.endsWith(dirSeparator)) ignore_dirs ~= line;
+						else ignore_files ~= line;
 					}
 				}
 			}
@@ -217,7 +224,15 @@ void main(string[] args) {
 			foreach(string path ; dirEntries(input, SpanMode.breadth)) {
 				immutable fpath = path;
 				if(path.startsWith(input)) path = path[input.length..$];
-				if(fpath.isFile && !in_array(path, ignore)) {
+				if(fpath.isFile && !in_array(path, ignore_files)) {
+					bool valid = true;
+					foreach(string dir ; ignore_dirs) {
+						if(path.startsWith(dir)) {
+							valid = false;
+							break;
+						}
+					}
+					if(!valid) continue;
 					writeln("Adding ", path);
 					count++;
 					string content = cast(string)read(fpath);
@@ -371,6 +386,10 @@ void main(string[] args) {
 				writeln("Use '", launch, " init <server-name> <hub|node> [<path>=", Settings.servers, "<name>] [<version>=latest]'");
 			}
 			break;
+		case "latest":
+			//TODO get it from the internet
+			writeln("0.8.4");
+			break;
 		case "list":
 			writeln("Servers managed by SEL Manager:");
 			foreach(ServerTuple server ; serverTuples) {
@@ -511,7 +530,9 @@ void main(string[] args) {
 					case "all":
 						wait(spawnShell("sel update sel"));
 						wait(spawnShell("sel update libs"));
-						// update every server
+						foreach(ServerTuple server ; serverTuples) {
+							wait(spawnShell("sel update " ~ server.name));
+						}
 						break;
 					case "sel":
 					case "this":
@@ -526,6 +547,7 @@ void main(string[] args) {
 					case "libs":
 					case "util":
 					case "utils":
+						// download and update libraries and utils
 						systemDownload(__UTILS__, Settings.config ~ "utils.sa");
 						wait(spawnShell("cd " ~ Settings.config ~ " && sel uncompress utils.sa utils"));
 						remove(Settings.config ~ "utils.sa");

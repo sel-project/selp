@@ -1,4 +1,5 @@
 
+title SEL Manager installation
 cd %appdata%
 bitsadmin /transfer "SEL Download" https://raw.githubusercontent.com/sel-project/sel-manager/master/manager.d %appdata%\manager.d
 rdmd --build-only manager.d
