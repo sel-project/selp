@@ -138,7 +138,8 @@ void main(string[] args) {
 							break;
 						}
 						if(arg == "-version=Pocket" || arg == "-version=Minecraft") {
-							//TODO cannot modify this!
+							// cannot modify this!
+							args = args[0..i] ~ args[i+1..$];
 						}
 					}
 					if(!exists(exe) || force) {
@@ -146,8 +147,17 @@ void main(string[] args) {
 						if(server.type == "node") {
 							wait(spawnShell("cd " ~ server.location ~ " && rdmd -version=NoRead init.d"));
 							string versions = cast(string)read(server.location ~ "plugins" ~ dirSeparator ~ ".versions");
-							string games = "-version=Pocket -version=Minecraft";
-							wait(spawnShell("cd " ~ server.location ~ " && rdmd --build-only -Jplugins -version=Manager -version=Pocket -version=Minecraft " ~ versions ~ " " ~ args[2..$].join(" ") ~ " main.d"));
+							string[] games = ["Pocket", "Minecraft"];
+							if(exists(server.location ~ "plugins" ~ dirSeparator ~ ".configuration")) {
+								games = [];
+								write(server.location ~ "__version.d", "module v;import std.stdio;mixin(import(\".configuration\"));void main(string[] args){if(__MCPE_ACCEPTED_PROTOCOLS__.length>0){writeln(\"Pocket\");}if(__MC_ACCEPTED_PROTOCOLS__.length>0){writeln(\"Minecraft\");}}");
+								foreach(string g ; executeShell("cd " ~ server.location ~ " && rdmd -Jplugins __version.d").output.split("\n")) {
+									g = g.strip;
+									if(g != "") games ~= g;
+								}
+								remove(server.location ~ "__version.d");
+							}
+							wait(spawnShell("cd " ~ server.location ~ " && rdmd --build-only -Jplugins " ~ ((){string str="";foreach(string g;games){str~="-version="~g~" ";}return str;}()) ~ " " ~ versions ~ " " ~ args[2..$].join(" ") ~ " main.d"));
 						} else {
 							if(hasCommand("javac")) {
 								if(exists(server.location ~ "bin")) rmdirRecurse(server.location ~ "bin");
@@ -271,7 +281,7 @@ void main(string[] args) {
 						connect();
 						// the node is built again if the the hub requires it
 						if(exists(pdir) && cast(string)read(pdir) != protocols) {
-							wait(spawnShell(launch ~ " build " ~ server.name ~ " force=true"));
+							wait(spawnShell(launch ~ " build " ~ server.name ~ " -force=true"));
 							connect();
 						}
 					} else {
@@ -549,7 +559,7 @@ void main(string[] args) {
 					case "utils":
 						// download and update libraries and utils
 						systemDownload(__UTILS__, Settings.config ~ "utils.sa");
-						wait(spawnShell("cd " ~ Settings.config ~ " && sel uncompress utils.sa utils"));
+						wait(spawnShell("sel uncompress " ~ Settings.config ~ "utils.sa " ~ Settings.config ~ "utils"));
 						remove(Settings.config ~ "utils.sa");
 						break;
 					default:
