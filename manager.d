@@ -340,7 +340,7 @@ void main(string[] args) {
 				string path = args.length > 3 ? args[3] : Settings.servers ~ name;
 				string vers = args.length > 4 ? args[4].toLower : "";
 				if(!nameExists(name)) {
-					if(in_array(name, noname)) {
+					if(!in_array(name, noname)) {
 						if(type == "hub" || type == "node") {
 							// get real path
 							version(Windows) {
