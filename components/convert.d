@@ -16,7 +16,7 @@ module convert;
 
 import std.base64 : Base64URL;
 import std.file : write;
-import std.process : executeShell;
+import std.process : executeShell, wait, spawnShell;
 import std.random : uniform;
 import std.stdio : writeln;
 import std.string;
@@ -69,10 +69,10 @@ void main(string[] args) {
 		}.replace("{from}", format_from).replace("{to}", format_to).replace("{froml}", location_from).replace("{tol}", location_to));
 
 	// convert
-	executeShell("cd " ~ location ~ " && rdmd -version=NoRead main.d");
+	wait(spawnShell("cd " ~ location ~ " && rdmd -version=NoRead main.d"));
 
 	// delete server and plugin
-	//executeShell("sel delete " ~ serverName);
+	executeShell("sel delete " ~ serverName);
 
 }
 
