@@ -30,7 +30,7 @@ import std.typecons : Tuple, tuple;
 
 alias ServerTuple = Tuple!(string, "name", string, "location", string, "type");
 
-enum __MANAGER__ = "3.2.70";
+enum __MANAGER__ = "3.2.72";
 enum __WEBSITE__ = "http://downloads.selproject.org/";
 enum __COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
 enum __UTILS__ = "https://raw.githubusercontent.com/sel-project/sel-utils/master/release.sa";
@@ -45,7 +45,7 @@ version(Windows) {
 
 enum commands = ["about", "build", "connect", "console", "convert", "delete", "init", "latest", "list", "locate", "ping", "query", "rcon", "start", "update"];
 
-enum noname = ["*", "all", "sel", "this", "manager", "lib", "libs", "util", "utils"];
+enum noname = [".", "*", "all", "sel", "this", "manager", "lib", "libs", "util", "utils"];
 
 struct Settings {
 	
@@ -90,6 +90,7 @@ void main(string[] args) {
 			writeln("  build   \tbuild a server");
 			writeln("  connect \tstart a node server and connect it to an hub");
 			writeln("  console \tconnect to a server throught the external console protocol");
+			writeln("  convert \tconvert a world to another format");
 			writeln("  delete  \tdelete a server");
 			writeln("  init    \tcreate a new server");
 			writeln("  latest  \tprint the latest stable version of SEL");
@@ -305,7 +306,7 @@ void main(string[] args) {
 			if(args.length > 4) {
 				string ffrom = args[1].toLower;
 				string fto = args[2].toLower;
-				//TODO launch component
+				launchComponent!true("convert", [ffrom, fto, args[3], args[4]]);
 			} else {
 				writeln("Use '", launch, " convert <format-from> <format-to> <location-from> [<location-to>=.]'");
 			}
@@ -337,7 +338,7 @@ void main(string[] args) {
 				string name = args[1].toLower;
 				string type = args[2].toLower;
 				string path = args.length > 3 ? args[3] : Settings.servers ~ name;
-				string vers = args.length > 4 ? args[4]: "";
+				string vers = args.length > 4 ? args[4].toLower : "";
 				if(!nameExists(name)) {
 					if(in_array(name, noname)) {
 						if(type == "hub" || type == "node") {
@@ -350,9 +351,9 @@ void main(string[] args) {
 								path = executeShell("cd " ~ path ~ " && pwd").output.strip;
 							}
 							if(!path.endsWith(dirSeparator)) path ~= dirSeparator;
-							if(vers.toLower != "none") {
-								if(vers == "" || vers.toLower == "latest") vers = get(__WEBSITE__ ~ "latest.txt").idup;
-								vers ~= ".sa";
+							if(vers != "none") {
+								if(vers == "" || vers == "latest") vers = executeShell("sel latest").output.strip;
+								if(!vers.endsWith(".sa")) vers ~= ".sa";
 								if(!exists(Settings.cache ~ vers)) {
 									writeln("Downloading from " ~ __WEBSITE__ ~ vers);
 									mkdirRecurse(Settings.cache);
