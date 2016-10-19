@@ -15,6 +15,8 @@
 module convert;
 
 import std.base64 : Base64URL;
+import std.file : write;
+import std.process : executeShell;
 import std.random : uniform;
 import std.stdio : writeln;
 import std.string;
@@ -61,10 +63,10 @@ void main(string[] args) {
 
 			void main(string[] args) {
 				World world = new World();
-				$from.readWorld(world, "$froml");
-				$to.writeWorld(world, "$tol");
+				{from}.readWorld(world, "{froml}");
+				{to}.writeWorld(world, "{tol}");
 			}
-		}.replace("$from", format_from).replace("$to", format_to).replace("$froml", location_from).replace("$tol", location_to));
+		}.replace("{from}", format_from).replace("{to}", format_to).replace("{froml}", location_from).replace("{tol}", location_to));
 
 	// convert
 	executeShell("cd " ~ location ~ " && rdmd -version=NoRead main.d");
@@ -75,7 +77,7 @@ void main(string[] args) {
 }
 
 @property string randomName() {
-	string ret = "";
+	ubyte[] ret;
 	foreach(size_t i ; 0..48) {
 		ret ~= cast(ubyte)uniform!"[]"(0, 255);
 	}
