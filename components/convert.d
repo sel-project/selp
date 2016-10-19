@@ -77,9 +77,9 @@ void main(string[] args) {
 }
 
 @property string randomName() {
-	ubyte[] ret;
-	foreach(size_t i ; 0..48) {
-		ret ~= cast(ubyte)uniform!"[]"(0, 255);
+	char[] ret;
+	foreach(size_t i ; 0..16) {
+		ret ~= uniform!"[]"('a', 'z');
 	}
-	return Base64URL.encode(ret);
+	return ret.idup;
 }
