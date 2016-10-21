@@ -30,7 +30,7 @@ import std.typecons : Tuple, tuple;
 
 alias ServerTuple = Tuple!(string, "name", string, "location", string, "type");
 
-enum __MANAGER__ = "3.3.2";
+enum __MANAGER__ = "3.3.3";
 enum __WEBSITE__ = "http://downloads.selproject.org/";
 enum __COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
 enum __UTILS__ = "https://raw.githubusercontent.com/sel-project/sel-utils/master/release.sa";
@@ -297,7 +297,18 @@ void main(string[] args) {
 			break;
 		case "console":
 			if(args.length > 1) {
-				launchComponent!true("console", args[1..$]);
+				ptrdiff_t vers = -1;
+				foreach(size_t i, string arg; args) {
+					if(arg.startsWith("version=")) {
+						vers = to!size_t(arg[8..$]);
+						args = args[0..i] ~ args[i+1..$];
+					}
+					if(arg.startsWith("protocol=")) {
+						vers = to!size_t(arg[9..$]);
+						args = args[0..i] ~ args[i+1..$];
+					}
+				}
+				launchComponent!true("console", args[1..$], vers);
 			} else {
 				writeln("Use '", launch, " console <ip>[:<port>] <password> [<send-commands>=false]'");
 			}
@@ -674,7 +685,9 @@ string[] components() {
 	return ret;
 }
 
-string launchComponent(bool spawn=false)(string component, string[] args) {
+string launchComponent(bool spawn=false)(string component, string[] args, ptrdiff_t vers=-1) {
+	immutable name = component;
+	if(vers >= 0) component ~= to!string(vers);
 	if(!exists(Settings.config ~ "components")) mkdirRecurse(Settings.config ~ "components");
 	version(Windows) {
 		immutable ext = ".exe";
@@ -684,9 +697,10 @@ string launchComponent(bool spawn=false)(string component, string[] args) {
 		immutable runnable = "./" ~ component;
 	}
 	if(!exists(Settings.config ~ "components" ~ dirSeparator ~ component ~ ext)) {
-		systemDownload(__COMPONENTS__ ~ component ~ ".d", Settings.config ~ "components" ~ dirSeparator ~ component ~ ".d");
-		wait(spawnShell("cd " ~ Settings.config ~ "components && rdmd --build-only " ~ component ~ ".d"));
+		systemDownload(__COMPONENTS__ ~ name ~ ".d", Settings.config ~ "components" ~ dirSeparator ~ component ~ ".d");
+		wait(spawnShell("cd " ~ Settings.config ~ "components && echo " ~ to!string(vers) ~ " > version.txt && rdmd --build-only -J. -I" ~ Settings.config ~ "utils" ~ dirSeparator ~ " -J" ~ Settings.config ~ "utils" ~ dirSeparator ~ "json" ~ dirSeparator ~ "min " ~ component ~ ".d"));
 		remove(Settings.config ~ "components" ~ dirSeparator ~ component ~ ".d");
+		remove(Settings.config ~ "components" ~ dirSeparator ~ "version.txt");
 	}
 	immutable cmd = "cd " ~ Settings.config ~ "components && " ~ runnable ~ " " ~ args.join(" ").replace("\"", "\\\"");
 	static if(spawn) {
