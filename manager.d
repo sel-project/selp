@@ -146,18 +146,18 @@ void main(string[] args) {
 					if(!exists(exe) || force) {
 						if(exists(exe)) remove(exe);
 						if(server.type == "node") {
-							wait(spawnShell("cd " ~ server.location ~ " && rdmd -version=NoRead init.d"));
-							string versions = cast(string)read(server.location ~ "plugins" ~ dirSeparator ~ ".versions");
 							string[] games = ["Pocket", "Minecraft"];
 							if(exists(server.location ~ "plugins" ~ dirSeparator ~ ".configuration")) {
 								games = [];
-								write(server.location ~ "__version.d", "module v;import std.stdio;mixin(import(\".configuration\"));void main(string[] args){if(__MCPE_ACCEPTED_PROTOCOLS__.length>0){writeln(\"Pocket\");}if(__MC_ACCEPTED_PROTOCOLS__.length>0){writeln(\"Minecraft\");}}");
+								write(server.location ~ "__version.d", "module v;import std.stdio;mixin(import(\".configuration\"));void main(string[] args){static if(is(typeof(__MCPE_ACCEPTED_PROTOCOLS__))){if(__MCPE_ACCEPTED_PROTOCOLS__.length>0){writeln(\"Pocket\");}}static if(is(typeof(__MC_ACCEPTED_PROTOCOLS__))){if(__MC_ACCEPTED_PROTOCOLS__.length>0){writeln(\"Minecraft\");}}}");
 								foreach(string g ; executeShell("cd " ~ server.location ~ " && rdmd -Jplugins __version.d").output.split("\n")) {
 									g = g.strip;
 									if(g != "") games ~= g;
 								}
 								remove(server.location ~ "__version.d");
 							}
+							wait(spawnShell("cd " ~ server.location ~ " && rdmd -version=NoRead init.d"));
+							string versions = cast(string)read(server.location ~ "plugins" ~ dirSeparator ~ ".versions");
 							wait(spawnShell("cd " ~ server.location ~ " && rdmd --build-only -I" ~ Settings.config ~ "utils" ~ dirSeparator ~ "d -J" ~ Settings.config ~ "utils" ~ dirSeparator ~ "json" ~ dirSeparator ~ "min -Jplugins " ~ ((){string str="";foreach(string g;games){str~="-version="~g~" ";}return str;}()) ~ " " ~ versions ~ " " ~ args[2..$].join(" ") ~ " main.d"));
 						} else {
 							if(hasCommand("javac")) {
@@ -297,14 +297,14 @@ void main(string[] args) {
 			break;
 		case "console":
 			if(args.length > 1) {
-				ptrdiff_t vers = -1;
+				ptrdiff_t vers = 2; // latest
 				foreach(size_t i, string arg; args) {
-					if(arg.startsWith("version=")) {
-						vers = to!size_t(arg[8..$]);
+					if(arg.startsWith("-version=")) {
+						vers = to!size_t(arg[9..$]);
 						args = args[0..i] ~ args[i+1..$];
 					}
-					if(arg.startsWith("protocol=")) {
-						vers = to!size_t(arg[9..$]);
+					if(arg.startsWith("-protocol=")) {
+						vers = to!size_t(arg[10..$]);
 						args = args[0..i] ~ args[i+1..$];
 					}
 				}
