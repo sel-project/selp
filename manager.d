@@ -62,9 +62,9 @@ struct Settings {
 void main(string[] args) {
 
 	version(Windows) {
-		Settings.home = executeShell("echo %appdata%").output.strip;
+		Settings.home = locationOf("%appdata%");
 	} else {
-		Settings.home = executeShell("cd ~ && pwd").output.strip;
+		Settings.home = locationOf("~");
 	}
 	if(!Settings.home.endsWith(dirSeparator)) Settings.home ~= dirSeparator;
 	Settings.config = Settings.home ~ ".sel" ~ dirSeparator;
@@ -156,7 +156,7 @@ void main(string[] args) {
 								}
 								remove(server.location ~ "__version.d");
 							}
-							wait(spawnShell("cd " ~ server.location ~ " && rdmd -version=NoRead init.d"));
+							wait(spawnShell("cd " ~ server.location ~ " && rdmd init.d"));
 							string versions = cast(string)read(server.location ~ "plugins" ~ dirSeparator ~ ".versions");
 							wait(spawnShell("cd " ~ server.location ~ " && rdmd --build-only -I" ~ Settings.config ~ "utils" ~ dirSeparator ~ "d -J" ~ Settings.config ~ "utils" ~ dirSeparator ~ "json" ~ dirSeparator ~ "min -Jplugins " ~ ((){string str="";foreach(string g;games){str~="-version="~g~" ";}return str;}()) ~ " " ~ versions ~ " " ~ args[2..$].join(" ") ~ " main.d"));
 						} else {
@@ -642,10 +642,14 @@ bool in_array(T)(T value, T[] array) {
 	foreach(ServerTuple server ; serverTuples) {
 		if(server.name == name) return true;
 	}
-	return false;
+	return name == ".";
 }
 
 @property ServerTuple getServerByName(string name) {
+	if(name == ".") {
+		immutable loc = locationOf(name);
+		return ServerTuple(loc, loc, "node");
+	}
 	foreach(ServerTuple server ; serverTuples) {
 		if(server.name == name) return server;
 	}
@@ -659,6 +663,14 @@ void saveServerTuples(ServerTuple[] servers) {
 		file ~= Base64.encode(cast(ubyte[])server[0]) ~ "," ~ server[1] ~ "," ~ server[2] ~ __NEW_LINE__;
 	}
 	write(Settings.config ~ "sel.conf", file);
+}
+
+string locationOf(string loc) {
+	version(Windows) {
+		return executeShell("cd " ~ loc ~ " && cd").output.strip;
+	} else {
+		return executeShell("cd " ~ loc ~ " && pwd").output.strip;
+	}
 }
 
 bool hasCommand(string cmd) {
