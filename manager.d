@@ -647,7 +647,8 @@ bool in_array(T)(T value, T[] array) {
 
 @property ServerTuple getServerByName(string name) {
 	if(name == ".") {
-		immutable loc = locationOf(name);
+		string loc = locationOf(name);
+		if(!loc.endsWith(dirSeparator)) loc ~= dirSeparator;
 		return ServerTuple(loc, loc, "node");
 	}
 	foreach(ServerTuple server ; serverTuples) {
