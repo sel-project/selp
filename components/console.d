@@ -137,7 +137,7 @@ void main(string[] args) {
 				break;
 			case ConsoleMessage.ID:
 				auto cm = ConsoleMessage.staticDecode(buffer);
-				writelc("[", cm.node, "][", cm.logger, "] ", cm.message);
+				writeln("[", cm.node, "][", cm.logger, "] ", cm.message);
 				break;
 			case PermissionDenied.ID:
 				writeln("Permission denied");
