@@ -19,7 +19,7 @@ import core.thread;
 
 static import std.bitmanip;
 import std.algorithm : remove;
-import std.base64 : Base64;
+import std.base64 : Base64, Base64URL;
 import std.conv : to, ConvException;
 import std.datetime : Clock, UTC;
 import std.digest.sha : sha1Of;
@@ -57,7 +57,7 @@ void main(string[] args) {
 
 	write("Password required: ");
 	char[] password = readln().strip.dup;
-	send(Auth(Base64.encode(sha1Of(Base64.encode(cast(ubyte[])password))).idup, write_perm).encode());
+	send(Auth(Base64URL.encode(sha1Of(Base64.encode(cast(ubyte[])password))).idup, write_perm).encode());
 	password[] = '*';
 	version(Windows) {
 		//TODO is it even possible?
