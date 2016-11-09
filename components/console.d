@@ -213,7 +213,7 @@ public static void write(T)(T value, ref ubyte[] buffer) {
 			write!string(s, buffer);
 		}
 	} else static if(is(T == string)) {
-		write!ushort(value.length.to!ushort, buffer);
+		write!uint(value.length.to!uint, buffer);
 		foreach(char c ; value) {
 			write!ubyte(c, buffer);
 		}
@@ -232,7 +232,7 @@ public static T read(T)(ref ubyte[] buffer) {
 		}
 		return ret;
 	} else static if(is(T == string)) {
-		char[] ret = new char[read!ushort(buffer)];
+		char[] ret = new char[read!uint(buffer)];
 		foreach(size_t i ; 0..ret.length) {
 			ret[i] = read!ubyte(buffer);
 		}
