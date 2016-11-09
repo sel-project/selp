@@ -30,7 +30,7 @@ import std.typecons : Tuple, tuple;
 
 alias ServerTuple = Tuple!(string, "name", string, "location", string, "type");
 
-enum __MANAGER__ = "3.3.3";
+enum __MANAGER__ = "3.4.0";
 enum __WEBSITE__ = "http://downloads.selproject.org/";
 enum __COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
 enum __UTILS__ = "https://raw.githubusercontent.com/sel-project/sel-utils/master/release.sa";
@@ -109,9 +109,9 @@ void main(string[] args) {
 			if(args.length > 1) {
 				auto server = getServerByName(args[1].toLower);
 				if(server.name != "") {
-					immutable exe = server.location ~ (server.type == "node" ? __EXECUTABLE__ : "build.jar");
+					immutable exe = server.location ~ (server.type == "node" || server.type == "hubd" ? __EXECUTABLE__ : "build.jar");
 					if(exists(exe)) {
-						if(server.type == "node") {
+						if(server.type == "node" || server.type == "hubd") {
 							wait(spawnShell(exe ~ " about"));
 						} else {
 							wait(spawnShell("java -jar " ~ exe ~ " about"));
@@ -130,7 +130,7 @@ void main(string[] args) {
 			if(args.length > 1) {
 				auto server = getServerByName(args[1].toLower);
 				if(server.name != "") {
-					immutable exe = server.location ~ (server.type == "node" ? __EXECUTABLE__ : "build.jar");
+					immutable exe = server.location ~ (server.type == "node" || server.type == "hubd" ? __EXECUTABLE__ : "build.jar");
 					bool force = true;
 					foreach(size_t i, string arg; args) {
 						if(arg.startsWith("-force=")) {
@@ -159,6 +159,8 @@ void main(string[] args) {
 							wait(spawnShell("cd " ~ server.location ~ " && rdmd init.d"));
 							string versions = cast(string)read(server.location ~ "plugins" ~ dirSeparator ~ ".versions");
 							wait(spawnShell("cd " ~ server.location ~ " && rdmd --build-only -I" ~ Settings.config ~ "utils" ~ dirSeparator ~ "d -J" ~ Settings.config ~ "utils" ~ dirSeparator ~ "json" ~ dirSeparator ~ "min -Jplugins " ~ ((){string str="";foreach(string g;games){str~="-version="~g~" ";}return str;}()) ~ " " ~ versions ~ " " ~ args[2..$].join(" ") ~ " main.d"));
+						} else if(server.type == "hubd") {
+							wait(spawnShell("cd " ~ server.location ~ " && rdmd --build-only -I" ~ Settings.config ~ "utils" ~ dirSeparator ~ "d -J" ~ Settings.config ~ "utils" ~ dirSeparator ~ "json" ~ dirSeparator ~ "min -Jresources " ~ args[2..$].join(" ") ~ " main.d"));
 						} else {
 							if(hasCommand("javac")) {
 								if(exists(server.location ~ "bin")) rmdirRecurse(server.location ~ "bin");
@@ -352,13 +354,13 @@ void main(string[] args) {
 				string vers = args.length > 4 ? args[4].toLower : "";
 				if(!nameExists(name)) {
 					if(!in_array(name, noname)) {
-						if(type == "hub" || type == "node") {
+						if(type == "hub" || type == "node" || type == "hubd") {
 							// get real path
 							version(Windows) {
-								wait(spawnShell("md " ~ path));
+								wait(spawnShell("if not exists \"" ~ path ~ "\" md " ~ path));
 								path = executeShell("cd " ~ path ~ " && cd").output.strip;
 							} else {
-								wait(spawnShell("mkdir -p " ~ path));
+								wait(spawnShell("mkdir -p " ~ path)); //TODO create if it doesn't exist
 								path = executeShell("cd " ~ path ~ " && pwd").output.strip;
 							}
 							if(!path.endsWith(dirSeparator)) path ~= dirSeparator;
@@ -396,7 +398,7 @@ void main(string[] args) {
 							}
 							saveServerTuples(serverTuples ~ ServerTuple(name, path, type));
 						} else {
-							writeln("Invalid type \"", type, "\". Choose between \"hub\" and \"node\"");
+							writeln("Invalid type \"", type, "\". Choose between \"hub\", \"hubd\" and \"node\"");
 						}
 					} else {
 						writeln("Cannot name a server \"", name, "\"");
@@ -410,7 +412,7 @@ void main(string[] args) {
 			break;
 		case "latest":
 			//TODO get it from the internet
-			writeln("0.8.4");
+			writeln("1.0.0");
 			break;
 		case "list":
 			writeln("Servers managed by SEL Manager:");
@@ -513,6 +515,8 @@ void main(string[] args) {
 				if(server.name != "") {
 					if(server.type == "hub") {
 						wait(spawnShell("cd " ~ server.location ~ " && rdmd init.d && java -jar build.jar"));
+					} else if(server.type == "hubd") {
+						wait(spawnShell("cd " ~ server.location ~ " && ." ~ dirSeparator ~ "main"));
 					} else {
 						writeln("Server \"", server.name, "\" is not an hub");
 					}
