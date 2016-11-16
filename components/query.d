@@ -24,15 +24,19 @@ import std.string;
 
 void main(string[] args) {
 
-	string[] ipport = (args.length > 1 ? args[1] : "127.0.0.1").split(":");
-	string ip = ipport[0];
-	ushort port = ipport.length == 2 ? to!ushort(ipport[1]) : 0;
+	string ip = args.length > 1 ? args[1] : "127.0.0.1";
+	ushort port = 0;
+	if(ip.lastIndexOf(":") > ip.lastIndexOf("]")) {
+		port = to!ushort(ip[ip.lastIndexOf(":")+1..$]);
+		ip = ip[0..ip.lastIndexOf(":")];
+	}
+	ip = ip.replace("[", "").replace("]", "");
 
 	string[] ret;
 
 	foreach(ushort p ; port == 0 ? cast(ushort[])[25565, 19132] : [port]) {
 		try {
-			string res = query(getAddress(ip, p)[0]);
+			string res = query(parseAddress(ip, p));
 			if(res !is null) {
 				ret ~= res;
 			}
@@ -51,7 +55,7 @@ string query(Address address) {
 	ubyte[] buffer = new ubyte[2 ^^ 16];
 	ptrdiff_t recv;
 
-	UdpSocket socket = new UdpSocket();
+	UdpSocket socket = new UdpSocket(address.addressFamily);
 	socket.setOption(SocketOptionLevel.SOCKET, SocketOption.REUSEADDR, true);
 	socket.setOption(SocketOptionLevel.SOCKET, SocketOption.SNDTIMEO, dur!"msecs"(256));
 	socket.setOption(SocketOptionLevel.SOCKET, SocketOption.RCVTIMEO, dur!"seconds"(2));
