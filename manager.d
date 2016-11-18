@@ -30,7 +30,7 @@ import std.typecons : Tuple, tuple;
 
 alias ServerTuple = Tuple!(string, "name", string, "location", string, "type");
 
-enum __MANAGER__ = "3.4.0";
+enum __MANAGER__ = "3.4.1";
 enum __WEBSITE__ = "http://downloads.selproject.org/";
 enum __COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
 enum __UTILS__ = "https://raw.githubusercontent.com/sel-project/sel-utils/master/release.sa";
@@ -489,7 +489,11 @@ void main(string[] args) {
 			}
 			break;
 		case "rcon":
-			writeln("This functionality is not available yet");
+			if(args.length >= 3) {
+				launchComponent!true("rcon", args[1..$]);
+			} else {
+				writeln("Use '", launch, " rcon <ip>[:<port>] <password>'");
+			}
 			break;
 		version(linux) {
 			case "shortcut":

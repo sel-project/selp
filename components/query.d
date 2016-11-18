@@ -31,6 +31,9 @@ void main(string[] args) {
 		ip = ip[0..ip.lastIndexOf(":")];
 	}
 	ip = ip.replace("[", "").replace("]", "");
+	try {
+		ip = getAddressInfo(ip)[0].address.toString().split(":")[0..$-1].join(":").replace("[", "").replace("]", "");
+	} catch(SocketException) {}
 
 	string[] ret;
 
@@ -40,7 +43,9 @@ void main(string[] args) {
 			if(res !is null) {
 				ret ~= res;
 			}
-		} catch(Throwable) {}
+		} catch(Throwable t) {
+			throw t;
+		}
 	}
 
 	stdwrite("{", ret.join(","), "}");
@@ -75,7 +80,7 @@ string query(Address address) {
 	if((recv = socket.receiveFrom(buffer, address)) <= 16 || recv >= buffer.length) return null;
 	ping += peek - last_time;
 
-	ubyte[] stats = buffer[16..recv];
+	ubyte[] stats = buffer[5..recv];
 	auto info = parseKeyValue(stats);
 	stats = stats[10..$];
 	auto players = parseValue(stats);
@@ -87,13 +92,15 @@ string query(Address address) {
 		ret ~= "\"name\":\"" ~ info["hostname"] ~ "\",";
 		ret ~= "\"online\":" ~ info["numplayers"] ~ ",";
 		ret ~= "\"max\":" ~ info["maxplayers"] ~ ",";
-		ret ~= "\"software\":\"" ~ info["plugins"].split(":")[0].strip ~ "\",";
+		ret ~= "\"software\":\"" ~ (info["plugins"].length ? info["plugins"].split(":")[0].strip : "Vanilla") ~ "\",";
 		ret ~= "\"plugins\":[" ~ ((){
 				string[] ret;
-				foreach(string plugin ; info["plugins"].split(":")[1..$].join(":").split(";")) {
-					string[] spl = plugin.strip.split(" ");
-					if(spl.length > 0) {
-						ret ~= "{\"name\":\"" ~ spl[0..max($-1, 1)].join(" ").replace("_", " ") ~ "\",\"version\":\"" ~ (spl.length == 1 ? "unknown" : spl[$-1]) ~ "\"}";
+				if(info["plugins"].length) {
+					foreach(string plugin ; info["plugins"].split(":")[1..$].join(":").split(";")) {
+						string[] spl = plugin.strip.split(" ");
+						if(spl.length > 0) {
+							ret ~= "{\"name\":\"" ~ spl[0..max($-1, 1)].join(" ").replace("_", " ") ~ "\",\"version\":\"" ~ (spl.length == 1 ? "unknown" : spl[$-1]) ~ "\"}";
+						}
 					}
 				}
 				return ret.join(",");
@@ -125,7 +132,7 @@ string[string] parseKeyValue(ref ubyte[] buffer) {
 	bool last0 = false;
 	foreach(size_t i, ref ubyte b; buffer) { // do not count the last null byte
 		if(b == 0) {
-			if(last0) {
+			if(last0 && key is null) {
 				buffer = buffer[i..$];
 				return ret;
 			} else if(key is null) {
@@ -149,7 +156,7 @@ string[] parseValue(ref ubyte[] buffer) {
 	// value\0value\0value\0\0
 	string[] ret;
 	ubyte[] next;
-	bool last0 = false;
+	bool last0 = true;
 	foreach(size_t i, ref ubyte b; buffer) {
 		if(b == 0) {
 			if(last0) {

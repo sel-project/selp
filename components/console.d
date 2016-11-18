@@ -19,7 +19,7 @@ import core.thread;
 
 static import std.bitmanip;
 import std.algorithm : remove;
-import std.base64 : Base64, Base64URL;
+import std.base64 : Base64;
 import std.conv : to, ConvException;
 import std.datetime : Clock, UTC;
 import std.digest.sha : sha1Of;
@@ -29,35 +29,50 @@ import std.stdio : write, writeln, readln;
 import std.string;
 import std.typecons : Tuple;
 
+import sul.constants : SulConstants = Constants;
+import sul.protocol : SulProtocol = Protocol, SoftwareType;
+
 void main(string[] args) {
 
-	string[] ipport = (args.length > 1 ? args[1] : "127.0.0.1").split(":");
-	string ip = ipport[0];
-	ushort port = ipport.length == 2 ? to!ushort(ipport[1]) : 19134;
-
 	bool write_perm = false;
-	foreach(string arg ; args) {
-		if(arg == "-commands=true") {
-			write_perm = true;
-			break;
+	foreach(i, string arg; args) {
+		if(arg.startsWith("-commands=")) {
+			if(arg == "-commands=true") {
+				write_perm = true;
+			}
+			args = args[0..i] ~ args[i+1..$];
 		}
 	}
+	
+	string ip = args.length > 1 ? args[1] : "127.0.0.1";
+	ushort port = 19134;
+	if(ip.lastIndexOf(":") > ip.lastIndexOf("]")) {
+		port = to!ushort(ip[ip.lastIndexOf(":")+1..$]);
+		ip = ip[0..ip.lastIndexOf(":")];
+	}
+	Address address;
+	try {	
+		address = parseAddress(ip, port);
+	} catch(SocketException) {
+		address = getAddressInfo(ip.replace("[", "").replace("]", ""), to!string(port))[0].address;
+	}
 
-	try {
-		ip = getAddress(ip)[0].toAddrString();
-	} catch(SocketException) {}
-
-	TcpSocket socket = new TcpSocket();
+	Socket socket = new TcpSocket(address.addressFamily);
 	socket.blocking = true;
-	socket.connect(new InternetAddress(InternetAddress.parse(ip), port));
+	socket.connect(address);
 
 	bool send(ubyte[] data) {
 		return socket.send(cast(ubyte[])[data.length & 255, (data.length >> 8) & 255] ~ data) != Socket.ERROR;
 	}
 
+	ubyte[] cred_buffer = new ubyte[19];
+	// wait for auth credentials
+	if(socket.receive(cred_buffer) != 19) return;
+	auto payload = Protocol.Login.AuthCredentials().decode(cred_buffer[2..$]).payload;
+
 	write("Password required: ");
 	char[] password = readln().strip.dup;
-	send(Auth(Base64URL.encode(sha1Of(Base64.encode(cast(ubyte[])password))).idup, write_perm).encode());
+	send(Protocol.Login.Auth(sha1Of(to!string(protocol) ~ Base64.encode(cast(ubyte[])password) ~ Base64.encode(payload)), write_perm).encode());
 	password[] = '*';
 	version(Windows) {
 		//TODO is it even possible?
@@ -74,7 +89,7 @@ void main(string[] args) {
 		size_t count = 0;
 		while(true) {
 			Thread.sleep(dur!"seconds"(5));
-			send(Ping(count++).encode()); // that shouldn't even work...
+			send(Protocol.Status.Ping(count++).encode()); // that shouldn't even work...
 			ping_time = peek;
 		}
 	}).start();
@@ -99,7 +114,7 @@ void main(string[] args) {
 						writeln("Connected nodes: ", nodes.join(", "));
 						break;
 					default:
-						send(Command(message).encode());
+						send(Protocol.Play.Command(message).encode());
 						break;
 				}
 			}
@@ -111,7 +126,10 @@ void main(string[] args) {
 	while(true) {
 
 		ptrdiff_t recv = socket.receive(socket_buffer);
-		if(recv < 2) break;
+		if(recv < 2) {
+			writeln("Disconnected");
+			exit(0);
+		}
 
 		ubyte[] buffer = socket_buffer[0..recv];
 		size_t length = buffer[0] | buffer[1] << 8;
@@ -119,12 +137,12 @@ void main(string[] args) {
 		buffer = buffer[2..length+2];
 
 		switch(buffer[0]) {
-			case Welcome.ID:
-				auto welcome = Welcome.staticDecode(buffer);
+			case Protocol.Login.Welcome.packetId:
+				auto welcome = Protocol.Login.Welcome().decode(buffer);
 				if(welcome.accepted) {
-					nodes = welcome.nodes;
-					writeln("Connected to ", ip, ":", port);
-					writeln("Software: ", welcome.sel, " v", welcome.vers);
+					nodes = welcome.connectedNodes;
+					writeln("Connected to ", address);
+					writeln("Software: ", welcome.software, " v", welcome.vers);
 					writeln("API: ", welcome.api);
 					writeln("Connected nodes: ", nodes);
 				} else {
@@ -132,25 +150,25 @@ void main(string[] args) {
 					exit(0);
 				}
 				break;
-			case Pong.ID:
+			case Protocol.Status.Pong.packetId:
 				ping = peek - ping_time;
 				break;
-			case ConsoleMessage.ID:
-				auto cm = ConsoleMessage.staticDecode(buffer);
+			case Protocol.Play.ConsoleMessage.packetId:
+				auto cm = Protocol.Play.ConsoleMessage().decode(buffer);
 				writeln("[", cm.node, "][", cm.logger, "] ", cm.message);
 				break;
-			case PermissionDenied.ID:
+			case Protocol.Play.PermissionDenied.packetId:
 				writeln("Permission denied");
 				break;
-			case UpdateStats.ID:
+			case Protocol.Play.UpdateStats.packetId:
 				//writeln(UpdateStats.staticDecode(buffer));
 				break;
-			case UpdateNodes.ID:
-				auto un = UpdateNodes.staticDecode(buffer);
-				if(un.add) {
-					nodes ~= un.node;
+			case Protocol.Play.UpdateNodes.packetId:
+				auto un = Protocol.Play.UpdateNodes().decode(buffer);
+				if(un.action == Constants.UpdateNodes.action.add) {
+					nodes ~= un.nodeName;
 				} else {
-					remove(nodes, un.node);
+					remove(nodes, un.nodeName);
 				}
 				break;
 			default:
@@ -166,98 +184,16 @@ void main(string[] args) {
 	return t.toUnixTime!long * 1000 + t.fracSecs.total!"msecs";
 }
 
-struct Packet(ubyte id, E...) {
+static if(__traits(compiles, import("version.txt"))) {
 
-	public static immutable ubyte ID = id;
+	enum uint protocol = import("version.txt");
 
-	public Tuple!E tuple;
+} else {
 
-	public this(F...)(F args) {
-		this.tuple = Tuple!E(args);
-	}
-
-	public ubyte[] encode() {
-		ubyte[] buffer;
-		write(id, buffer);
-		foreach(size_t i, F; E) {
-			static if(i % 2 == 0) {
-				mixin("write(this." ~ E[i+1] ~ ", buffer);");
-			}
-		}
-		return buffer;
-	}
-
-	public void decode(ubyte[] buffer) {
-		read!ubyte(buffer);
-		foreach(size_t i, F; E) {
-			static if(i % 2 == 0) {
-				mixin("this." ~ E[i+1] ~ " = read!(E[" ~ to!string(i) ~ "])(buffer);");
-			}
-		}
-	}
-
-	alias tuple this;
-
-	public static typeof(this) staticDecode(ubyte[] buffer) {
-		typeof(this) packet;
-		packet.decode(buffer);
-		return packet;
-	}
+	enum uint protocol = 2;
 
 }
 
-public static void write(T)(T value, ref ubyte[] buffer) {
-	static if(is(T == string[])) {
-		write!uint(value.length.to!uint, buffer);
-		foreach(string s ; value) {
-			write!string(s, buffer);
-		}
-	} else static if(is(T == string)) {
-		write!uint(value.length.to!uint, buffer);
-		foreach(char c ; value) {
-			write!ubyte(c, buffer);
-		}
-	} else {
-		size_t index = buffer.length;
-		buffer.length = buffer.length + T.sizeof;
-		return std.bitmanip.write!T(buffer, value, &index);
-	}
-}
+alias Protocol = SulProtocol!("externalconsole", protocol, SoftwareType.client);
 
-public static T read(T)(ref ubyte[] buffer) {
-	static if(is(T == string[])) {
-		string[] ret = new string[read!uint(buffer)];
-		foreach(size_t i ; 0..ret.length) {
-			ret[i] = read!string(buffer);
-		}
-		return ret;
-	} else static if(is(T == string)) {
-		char[] ret = new char[read!uint(buffer)];
-		foreach(size_t i ; 0..ret.length) {
-			ret[i] = read!ubyte(buffer);
-		}
-		return ret.idup;
-	} else {
-		if(buffer.length < T.sizeof) buffer.length = T.sizeof;
-		T ret = std.bitmanip.read!T(buffer);
-		return ret;
-	}
-}
-
-alias Auth = Packet!(1, string, "password", bool, "write_perm");
-
-alias Welcome = Packet!(1, bool, "accepted", string, "sel", string, "vers", uint, "api", string[], "nodes");
-
-alias Ping = Packet!(2, ulong, "ping");
-
-alias Pong = Packet!(2, ulong, "pong");
-
-alias ConsoleMessage = Packet!(3, string, "node", ulong, "time", string, "logger", string, "message");
-
-alias Command = Packet!(4, string, "command");
-
-alias PermissionDenied = Packet!(4);
-
-alias UpdateStats = Packet!(5, string, "name", uint, "online", uint, "max", uint, "uptime", float, "tps", uint, "upload", uint, "download", ulong, "memory", float, "cpu");
-
-alias UpdateNodes = Packet!(6, bool, "add", string, "node");
+alias Constants = SulConstants!("externalconsole", protocol);
