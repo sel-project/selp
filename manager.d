@@ -719,7 +719,7 @@ string launchComponent(bool spawn=false)(string component, string[] args, ptrdif
 	}
 	if(!exists(Settings.config ~ "components" ~ dirSeparator ~ component ~ ext)) {
 		systemDownload(__COMPONENTS__ ~ name ~ ".d", Settings.config ~ "components" ~ dirSeparator ~ component ~ ".d");
-		wait(spawnShell("cd " ~ Settings.config ~ "components && echo " ~ to!string(vers) ~ " > version.txt && rdmd --build-only -J. -I" ~ Settings.config ~ "utils" ~ dirSeparator ~ " -J" ~ Settings.config ~ "utils" ~ dirSeparator ~ "json" ~ dirSeparator ~ "min " ~ component ~ ".d"));
+		wait(spawnShell("cd " ~ Settings.config ~ "components && echo " ~ to!string(vers) ~ " > version.txt && rdmd --build-only -J. -I" ~ Settings.config ~ "utils" ~ dirSeparator ~ "d -J" ~ Settings.config ~ "utils" ~ dirSeparator ~ "json" ~ dirSeparator ~ "min " ~ component ~ ".d"));
 		remove(Settings.config ~ "components" ~ dirSeparator ~ component ~ ".d");
 		remove(Settings.config ~ "components" ~ dirSeparator ~ "version.txt");
 	}
