@@ -186,13 +186,15 @@ void main(string[] args) {
 
 static if(__traits(compiles, import("version.txt"))) {
 
-	enum uint protocol = import("version.txt");
+	enum protocol = to!int(import("version.txt"));
 
 } else {
 
-	enum uint protocol = 2;
+	enum protocol = 2;
 
 }
+
+static assert(protocol >= 2, "Protocol is not supported");
 
 alias Protocol = SulProtocol!("externalconsole", protocol, SoftwareType.client);
 
