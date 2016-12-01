@@ -60,6 +60,7 @@ void main(string[] args) {
 	Socket socket = new TcpSocket(address.addressFamily);
 	socket.blocking = true;
 	socket.connect(address);
+	socket.send("classic");
 
 	bool send(ubyte[] data) {
 		return socket.send(cast(ubyte[])[data.length & 255, (data.length >> 8) & 255] ~ data) != Socket.ERROR;

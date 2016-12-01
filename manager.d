@@ -14,11 +14,13 @@
  */
 module manager;
 
-import core.thread : Thread, dur;
+import core.thread : Thread;
 
-import std.algorithm : min;
+import std.algorithm : min, canFind;
+import std.ascii : newline;
 import std.base64 : Base64;
 import std.conv : to;
+import std.datetime : dur, StopWatch, AutoStart;
 import std.file;
 import std.json;
 import std.net.curl : get, download;
@@ -28,18 +30,16 @@ import std.stdio : writeln, readln;
 import std.string;
 import std.typecons : Tuple, tuple;
 
-alias ServerTuple = Tuple!(string, "name", string, "location", string, "type");
+alias ServerTuple = Tuple!(string, "name", string, "location", string, "type", string[], "flags");
 
-enum __MANAGER__ = "3.4.1";
+enum __MANAGER__ = "3.4.2";
 enum __WEBSITE__ = "http://downloads.selproject.org/";
 enum __COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
 enum __UTILS__ = "https://raw.githubusercontent.com/sel-project/sel-utils/master/release.sa";
 
 version(Windows) {
-	enum __NEW_LINE__ = "\r\n";
 	enum __EXECUTABLE__ = "main.exe";
 } else {
-	enum __NEW_LINE__ = "\n";
 	enum __EXECUTABLE__ = "main";
 }
 
@@ -77,7 +77,7 @@ void main(string[] args) {
 	
 	if(args.length == 0) args ~= "help";
 
-	if(!in_array(args[0], commands) && args.length > 1 && nameExists(args[0])) {
+	if(!commands.canFind(args[0]) && args.length > 1 && nameExists(args[0])) {
 		string c = args[1];
 		args[1] = args[0];
 		args[0] = c;
@@ -130,7 +130,7 @@ void main(string[] args) {
 			if(args.length > 1) {
 				auto server = getServerByName(args[1].toLower);
 				if(server.name != "") {
-					immutable exe = server.location ~ (server.type == "node" || server.type == "hubd" ? __EXECUTABLE__ : "build.jar");
+					immutable exe = server.location ~ (["node", "hubd", "full"].canFind(server.type) ? __EXECUTABLE__ : "build.jar");
 					bool force = true;
 					foreach(size_t i, string arg; args) {
 						if(arg.startsWith("-force=")) {
@@ -143,9 +143,13 @@ void main(string[] args) {
 							args = args[0..i] ~ args[i+1..$];
 						}
 					}
+					if(server.type == "full") args ~= ["-I..", "-version=OneNode"];
 					if(!exists(exe) || force) {
+						StopWatch timer = StopWatch(AutoStart.yes);
+						string output;
 						if(exists(exe)) remove(exe);
-						if(server.type == "node") {
+						if(server.type == "node" || server.type == "full") {
+							string location = server.location ~ (server.type == "full" ? "node": "");
 							string[] games = ["Pocket", "Minecraft"];
 							if(exists(server.location ~ "plugins" ~ dirSeparator ~ ".configuration")) {
 								games = [];
@@ -156,12 +160,16 @@ void main(string[] args) {
 								}
 								remove(server.location ~ "__version.d");
 							}
-							wait(spawnShell("cd " ~ server.location ~ " && rdmd init.d"));
-							string versions = cast(string)read(server.location ~ "plugins" ~ dirSeparator ~ ".versions");
-							wait(spawnShell("cd " ~ server.location ~ " && rdmd --build-only -I" ~ Settings.config ~ "utils" ~ dirSeparator ~ "d -J" ~ Settings.config ~ "utils" ~ dirSeparator ~ "json" ~ dirSeparator ~ "min -Jplugins " ~ ((){string str="";foreach(string g;games){str~="-version="~g~" ";}return str;}()) ~ " " ~ versions ~ " " ~ args[2..$].join(" ") ~ " main.d"));
-						} else if(server.type == "hubd") {
-							wait(spawnShell("cd " ~ server.location ~ " && rdmd --build-only -I" ~ Settings.config ~ "utils" ~ dirSeparator ~ "d -J" ~ Settings.config ~ "utils" ~ dirSeparator ~ "json" ~ dirSeparator ~ "min -Jresources " ~ args[2..$].join(" ") ~ " main.d"));
-						} else {
+							wait(spawnShell("cd " ~ location ~ " && rdmd init.d"));
+							string versions = cast(string)read(location ~ "plugins" ~ dirSeparator ~ ".versions");
+							wait(spawnShell("cd " ~ location ~ " && rdmd --build-only -I" ~ Settings.config ~ "utils" ~ dirSeparator ~ "d -J" ~ Settings.config ~ "utils" ~ dirSeparator ~ "json" ~ dirSeparator ~ "min -Jplugins " ~ ((){string str="";foreach(string g;games){str~="-version="~g~" ";}return str;}()) ~ " " ~ versions ~ " " ~ args[2..$].join(" ") ~ " main.d"));
+						}
+						if(server.type == "hubd" || server.type == "full") {
+							string location = server.location ~ (server.type == "full" ? "hubd" : "");
+							if(server.flags.canFind("edu")) args ~= "-version=Edu";
+							wait(spawnShell("cd " ~ location ~ " && rdmd --build-only -I" ~ Settings.config ~ "utils" ~ dirSeparator ~ "d -J" ~ Settings.config ~ "utils" ~ dirSeparator ~ "json" ~ dirSeparator ~ "min -Jresources " ~ args[2..$].join(" ") ~ " main.d"));
+						}
+						if(server.type == "hub") {
 							if(hasCommand("javac")) {
 								if(exists(server.location ~ "bin")) rmdirRecurse(server.location ~ "bin");
 								mkdirRecurse(server.location ~ "bin");
@@ -176,7 +184,7 @@ void main(string[] args) {
 									executeShell("cd " ~ server.location ~ " && find lib -name \"*.jar\" > " ~ server.location ~ "libs.txt");
 									executeShell("cd " ~ server.location ~ "bin && find lib -name \"*.jar\" > " ~ server.location ~ "bin" ~ dirSeparator ~ "libs.txt");
 								}
-								string libs = (cast(string)read(server.location ~ "libs.txt")).replace(__NEW_LINE__, pathSeparator) ~ ".";
+								string libs = (cast(string)read(server.location ~ "libs.txt")).replace(newline, pathSeparator) ~ ".";
 								wait(spawnShell("cd " ~ server.location ~ " && javac -cp " ~ libs ~ " -d bin @sources.txt"));
 								version(Windows) {
 									executeShell("cd " ~ server.location ~ " && dir /s /B bin\\*.class > " ~ server.location ~ "sources.txt");
@@ -184,7 +192,7 @@ void main(string[] args) {
 									executeShell("cd " ~ server.location ~ "/lib && find sel -name \"*.class\" > " ~ server.location ~ "sources.txt");
 								}
 								//wait(spawnShell("cd " ~ server.location ~ " && java -cp " ~ libs ~ " @sources.txt"));
-								write(server.location ~ "bin" ~ dirSeparator ~ "manifest.txt", "Main-Class: sel.Main" ~ __NEW_LINE__ ~ "Class-Path: " ~ (cast(string)read(server.location ~ "bin" ~ dirSeparator ~ "libs.txt")).replace(__NEW_LINE__, " ") ~ __NEW_LINE__);
+								write(server.location ~ "bin" ~ dirSeparator ~ "manifest.txt", "Main-Class: sel.Main" ~ newline ~ "Class-Path: " ~ (cast(string)read(server.location ~ "bin" ~ dirSeparator ~ "libs.txt")).replace(newline, " ") ~ newline);
 								wait(spawnShell("cd " ~ server.location ~ "bin && jar cfm build.jar manifest.txt sel" ~ dirSeparator ~ "*"));
 								write(server.location ~ "build.jar", read(server.location ~ "bin" ~ dirSeparator ~ "build.jar"));
 								remove(server.location ~ "sources.txt");
@@ -196,6 +204,9 @@ void main(string[] args) {
 								writeln("Java Development Kit (JDK) is not installed on this device and the hub cannot be built without it");
 							}
 						}
+						timer.stop();
+						writeln("Done. Compilation took ", timer.peek.seconds, " seconds.");
+						//TODO write deprecations and errors
 					}
 				} else {
 					writeln("There's no server named \"", args[1].toLower, "\"");
@@ -237,7 +248,7 @@ void main(string[] args) {
 			foreach(string path ; dirEntries(input, SpanMode.breadth)) {
 				immutable fpath = path;
 				if(path.startsWith(input)) path = path[input.length..$];
-				if(fpath.isFile && !in_array(path, ignore_files)) {
+				if(fpath.isFile && !ignore_files.canFind(path)) {
 					bool valid = true;
 					foreach(string dir ; ignore_dirs) {
 						if(path.startsWith(dir)) {
@@ -353,7 +364,7 @@ void main(string[] args) {
 				string path = args.length > 3 ? args[3] : Settings.servers ~ name;
 				string vers = args.length > 4 ? args[4].toLower : "";
 				if(!nameExists(name)) {
-					if(!in_array(name, noname)) {
+					if(!noname.canFind(name)) {
 						if(type == "hub" || type == "node" || type == "hubd") {
 							// get real path
 							version(Windows) {
@@ -396,7 +407,7 @@ void main(string[] args) {
 									}
 								}
 							}
-							saveServerTuples(serverTuples ~ ServerTuple(name, path, type));
+							saveServerTuples(serverTuples ~ ServerTuple(name, path, type, []));
 						} else {
 							writeln("Invalid type \"", type, "\". Choose between \"hub\", \"hubd\" and \"node\"");
 						}
@@ -434,7 +445,7 @@ void main(string[] args) {
 		case "ping":
 			if(args.length > 1) {
 				string str = launchComponent("ping", args[1..$]);
-				if(in_array("-json", args)) {
+				if(args.canFind("-json")) {
 					writeln(str);
 				} else {
 					void printping(string type, JSONValue[string] value) {
@@ -458,7 +469,7 @@ void main(string[] args) {
 		case "query":
 			if(args.length > 1) {
 				string str = launchComponent("query", args[1..$]);
-				if(in_array("-json", args)) {
+				if(args.canFind("-json")) {
 					writeln(str);
 				} else {
 					void printquery(string type, JSONValue[string] value) {
@@ -626,20 +637,13 @@ void printusage() {
 	writeln("Commands:");
 }
 
-bool in_array(T)(T value, T[] array) {
-	foreach(T av ; array) {
-		if(av == value) return true;
-	}
-	return false;
-}
-
 @property ServerTuple[] serverTuples() {
 	ServerTuple[] ret;
 	if(exists(Settings.config ~ "sel.conf")) {
-		foreach(string s ; (cast(string)read(Settings.config ~ "sel.conf")).split(__NEW_LINE__)) {
+		foreach(string s ; (cast(string)read(Settings.config ~ "sel.conf")).split(newline)) {
 			string[] spl = s.split(",");
-			if(spl.length == 3) {
-				ret ~= ServerTuple(cast(string)Base64.decode(spl[0]), spl[1], spl[2]);
+			if(spl.length == 3 || spl.length == 4) {
+				ret ~= ServerTuple(cast(string)Base64.decode(spl[0]), spl[1], spl[2], spl.length==4 ? spl[3].split("|") : []);
 			}
 		}
 	}
@@ -657,7 +661,7 @@ bool in_array(T)(T value, T[] array) {
 	if(name == ".") {
 		string loc = locationOf(name);
 		if(!loc.endsWith(dirSeparator)) loc ~= dirSeparator;
-		return ServerTuple(loc, loc, "node");
+		return ServerTuple(loc, loc, "node", []);
 	}
 	foreach(ServerTuple server ; serverTuples) {
 		if(server.name == name) return server;
@@ -667,9 +671,9 @@ bool in_array(T)(T value, T[] array) {
 
 void saveServerTuples(ServerTuple[] servers) {
 	mkdirRecurse(Settings.config);
-	string file = "# SEL MANAGER CONFIGURATION FILE" ~ __NEW_LINE__;
+	string file = "# SEL MANAGER CONFIGURATION FILE" ~ newline;
 	foreach(ServerTuple server ; servers) {
-		file ~= Base64.encode(cast(ubyte[])server[0]) ~ "," ~ server[1] ~ "," ~ server[2] ~ __NEW_LINE__;
+		file ~= Base64.encode(cast(ubyte[])server[0]) ~ "," ~ server[1] ~ "," ~ server[2] ~ newline;
 	}
 	write(Settings.config ~ "sel.conf", file);
 }
