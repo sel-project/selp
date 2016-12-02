@@ -35,7 +35,7 @@ import sul.protocol : SulProtocol = Protocol, SoftwareType;
 
 static if(__traits(compiles, import("version.txt"))) {
 	
-	enum __protocol = to!int(import("version.txt"));
+	enum __protocol = to!int(strip(import("version.txt")));
 	
 } else {
 	
