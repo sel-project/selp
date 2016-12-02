@@ -18,11 +18,12 @@ import core.stdc.stdlib : exit;
 import core.thread;
 
 static import std.bitmanip;
-import std.algorithm : remove;
+import std.algorithm : remove, canFind;
 import std.base64 : Base64;
 import std.conv : to, ConvException;
 import std.datetime : Clock, UTC;
-import std.digest.sha : sha1Of;
+import std.digest.md;
+import std.digest.sha;
 import std.process : wait, spawnShell;
 import std.socket;
 import std.stdio : write, writeln, readln;
@@ -32,17 +33,21 @@ import std.typecons : Tuple;
 import sul.constants : SulConstants = Constants;
 import sul.protocol : SulProtocol = Protocol, SoftwareType;
 
-void main(string[] args) {
+static if(__traits(compiles, import("version.txt"))) {
+	
+	enum __protocol = to!int(import("version.txt"));
+	
+} else {
+	
+	enum __protocol = 1;
+	
+}
 
-	bool write_perm = false;
-	foreach(i, string arg; args) {
-		if(arg.startsWith("-commands=")) {
-			if(arg == "-commands=true") {
-				write_perm = true;
-			}
-			args = args[0..i] ~ args[i+1..$];
-		}
-	}
+alias Protocol = SulProtocol!("externalconsole", __protocol, SoftwareType.client);
+
+alias Constants = SulConstants!("externalconsole", __protocol);
+
+void main(string[] args) {
 	
 	string ip = args.length > 1 ? args[1] : "127.0.0.1";
 	ushort port = 19134;
@@ -57,40 +62,110 @@ void main(string[] args) {
 		address = getAddressInfo(ip.replace("[", "").replace("]", ""), to!string(port))[0].address;
 	}
 
+	ubyte[] buffer = new ubyte[2048];
+	ptrdiff_t recv;
+
 	Socket socket = new TcpSocket(address.addressFamily);
 	socket.blocking = true;
 	socket.connect(address);
 	socket.send("classic");
 
 	bool send(ubyte[] data) {
-		return socket.send(cast(ubyte[])[data.length & 255, (data.length >> 8) & 255] ~ data) != Socket.ERROR;
+		return socket.send(data) != Socket.ERROR;
+	}
+	
+	void error(string message) {
+		writeln(message);
+		socket.close();
+		exit(0);
 	}
 
-	ubyte[] cred_buffer = new ubyte[19];
 	// wait for auth credentials
-	if(socket.receive(cred_buffer) != 19) return;
-	auto payload = Protocol.Login.AuthCredentials().decode(cred_buffer[2..$]).payload;
+	recv = socket.receive(buffer);
+	if(recv == Socket.ERROR) {
+		error("Cannot connect: " ~ lastSocketError);
+	} else if(recv == 0) {
+		error("Connection closed by server");
+	} else if(buffer[0] != Protocol.Login.AuthCredentials.packetId) {
+		error("Wrong packet received. Maybe the wrong protocol is used?");
+	}
+	auto credentials = Protocol.Login.AuthCredentials().decode(buffer);
+	if(credentials.protocol != __protocol) {
+		error("Incompaticle protocols: " ~ to!string(credentials.protocol) ~ " is required");
+	} else if(!["", "sha1", "sha224", "sha256", "sha384", "sha512", "md5"].canFind(credentials.hashAlgorithm)) {
+		error("The server requires an unknown hash algorithm: " ~ credentials.hashAlgorithm);
+	}
 
-	write("Password required: ");
-	char[] password = readln().strip.dup;
-	send(Protocol.Login.Auth(sha1Of(to!string(protocol) ~ Base64.encode(cast(ubyte[])password) ~ Base64.encode(payload)), write_perm).encode());
-	password[] = '*';
-	version(Windows) {
-		//TODO is it even possible?
+	new Thread({
+		write("Password required: ");
+		char[] password = readln().strip.dup;
+		ubyte[] payload = cast(ubyte[])password.idup ~ credentials.payload;
+		ubyte[] hash = (){
+			switch(credentials.hashAlgorithm) {
+				case "sha1":
+					return sha1Of(payload).dup;
+				case "sha224":
+					return sha224Of(payload).dup;
+				case "sha256":
+					return sha256Of(payload).dup;
+				case "sha384":
+					return sha384Of(payload).dup;
+				case "sha512":
+					return sha512Of(payload).dup;
+				case "md5":
+					return md5Of(payload).dup;
+				default:
+					return cast(ubyte[])password.idup;
+			}
+		}();
+		send(Protocol.Login.Auth(hash).encode());
+		password[] = '*';
+		version(Windows) {
+			//TODO is it even possible?
+		} else {
+			// replaced the password in the console stdout with asteriks
+			wait(spawnShell("tput cuu 1 && tput el"));
+			writeln("Password Required: ", password);
+		}
+	}).start();
+
+	string[] nodes;
+	
+	recv = socket.receive(buffer);
+	if(recv <= 0) {
+		error("Connection error");
+	}
+	if(buffer[0] != Protocol.Login.Welcome.packetId) {
+		error("Wrong packet received");
+	}
+	auto welcome = Protocol.Login.Welcome().decode(buffer);
+	if(welcome.status == Protocol.Login.Welcome.Accepted.status) {
+		auto info = Protocol.Login.Welcome.Accepted().decode(buffer);
+		with(info) {
+			nodes = info.connectedNodes;
+			writeln("Connected to ", address);
+			writeln("Software: ", software, " v", versions[0], ".", versions[1], ".", versions[2]);
+			writeln("Remote commands: ", remoteCommands);
+			if(pocketProtocols) writeln("Pocket protocols: ", pocketProtocols);
+			if(minecraftProtocols) writeln("Minecraft Protocols: ", minecraftProtocols);
+			writeln("Connected nodes: ", nodes);
+		}
+	} else if(welcome.status == Protocol.Login.Welcome.WrongHash.status) {
+		error("Wrong password");
+	} else if(welcome.status == Protocol.Login.Welcome.TimedOut.status) {
+		error("\nTimed out");
+		//TODO a thread isn't killed because is waiting a console input
 	} else {
-		// replaced the password in the console stdout with asteriks
-		wait(spawnShell("tput cuu 1 && tput el"));
-		writeln("Password Required: ", password);
+		error("Unknown error");
 	}
 
 	ulong ping, ping_time;
-	string[] nodes;
 
 	new Thread({
 		size_t count = 0;
 		while(true) {
 			Thread.sleep(dur!"seconds"(5));
-			send(Protocol.Status.Ping(count++).encode()); // that shouldn't even work...
+			send(Protocol.Status.KeepAlive(count++).encode());
 			ping_time = peek;
 		}
 	}).start();
@@ -122,36 +197,17 @@ void main(string[] args) {
 		}
 	}).start();
 
-	ubyte[] socket_buffer = new ubyte[2 ^^ 16];
-
 	while(true) {
 
-		ptrdiff_t recv = socket.receive(socket_buffer);
-		if(recv < 2) {
-			writeln("Disconnected");
-			exit(0);
+		recv = socket.receive(buffer);
+		if(recv == Socket.ERROR) {
+			error("Connection error: " ~ lastSocketError);
+		} else if(recv == 0) {
+			error("Disconnected from server");
 		}
 
-		ubyte[] buffer = socket_buffer[0..recv];
-		size_t length = buffer[0] | buffer[1] << 8;
-		if(length > buffer.length + 2) continue;
-		buffer = buffer[2..length+2];
-
 		switch(buffer[0]) {
-			case Protocol.Login.Welcome.packetId:
-				auto welcome = Protocol.Login.Welcome().decode(buffer);
-				if(welcome.accepted) {
-					nodes = welcome.connectedNodes;
-					writeln("Connected to ", address);
-					writeln("Software: ", welcome.software, " v", welcome.vers);
-					writeln("API: ", welcome.api);
-					writeln("Connected nodes: ", nodes);
-				} else {
-					writeln("Wrong password");
-					exit(0);
-				}
-				break;
-			case Protocol.Status.Pong.packetId:
+			case Protocol.Status.KeepAlive.packetId:
 				ping = peek - ping_time;
 				break;
 			case Protocol.Play.ConsoleMessage.packetId:
@@ -161,15 +217,15 @@ void main(string[] args) {
 			case Protocol.Play.PermissionDenied.packetId:
 				writeln("Permission denied");
 				break;
-			case Protocol.Play.UpdateStats.packetId:
+			case Protocol.Status.UpdateStats.packetId:
 				//writeln(UpdateStats.staticDecode(buffer));
 				break;
-			case Protocol.Play.UpdateNodes.packetId:
-				auto un = Protocol.Play.UpdateNodes().decode(buffer);
+			case Protocol.Status.UpdateNodes.packetId:
+				auto un = Protocol.Status.UpdateNodes().decode(buffer);
 				if(un.action == Constants.UpdateNodes.action.add) {
-					nodes ~= un.nodeName;
+					nodes ~= un.node;
 				} else {
-					remove(nodes, un.nodeName);
+					remove(nodes, un.node);
 				}
 				break;
 			default:
@@ -184,19 +240,3 @@ void main(string[] args) {
 	auto t = Clock.currTime(UTC());
 	return t.toUnixTime!long * 1000 + t.fracSecs.total!"msecs";
 }
-
-static if(__traits(compiles, import("version.txt"))) {
-
-	enum protocol = to!int(import("version.txt"));
-
-} else {
-
-	enum protocol = 2;
-
-}
-
-static assert(protocol >= 2, "Protocol is not supported");
-
-alias Protocol = SulProtocol!("externalconsole", protocol, SoftwareType.client);
-
-alias Constants = SulConstants!("externalconsole", protocol);

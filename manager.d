@@ -310,7 +310,7 @@ void main(string[] args) {
 			break;
 		case "console":
 			if(args.length > 1) {
-				ptrdiff_t vers = 2; // latest
+				ptrdiff_t vers = 1; // latest
 				foreach(size_t i, string arg; args) {
 					if(arg.startsWith("-version=")) {
 						vers = to!size_t(arg[9..$]);
