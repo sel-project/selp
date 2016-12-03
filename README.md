@@ -40,24 +40,80 @@ sudo bash install.sh
 	
 	Compiles a server.
 	
-	The options will be passes to the RDMD compiler.
+	The options will be passed to the RDMD compiler.
 	For example, you can use `-compiler=ldc` to compile using [LDC](https://wiki.dlang.org/LDC) or `-release` to compile in release mode.
 	
 	The `-force=false` switch will exit without compiling if an executable file already exists.
 	
 * connect
 
-	`sel connect <server> [<node-name>=node] [<ip>=127.0.0.1] [<port>=28232] [<main-node>=true]`
+	`sel connect <server> [<options>]`
 	
 	Connects a node to an hub.
+
+	Available options:
+
+	* name
+
+		Indicates the name of the node that will be used by the hub and other nodes connected to it to identify this node.
+		It should be lowercase and composed only by latin letters and numbers.
+
+	* ip
+
+		```
+		-ip=192.168.1.24
+		-ip=::1
+		-ip=sel.example.com
+		```
+
+		Indicates the ip of the hub. If not specified the node will try to connect to the local machine using the address `127.0.0.1`.
+
+	* port
+
+		Indicates the port of the hub.
+
+	* main
+
+		Indicates whether or not the hub should send newly connected players to the node (`-main=true`) or not (`-main=false`). If not the hub will only send players to the node when transferred, wither via command or node's plugin.
+		This option is set to `true` if not specified.
 	
 * console
 
-	`sel console <ip>[:<port>]`
+	`sel console <ip>[:<port>] [<version>=1]`
 	
-	Connects to a server using the external console protocol, if the server supports it.
-	
-	With the `-version` switch is also possible to change the version of the external console. If this is not specified, the latest version supported by SEL is used.
+	Connects to a server using the external console protocol with the indicated version, if the server supports it and has it enabled.
+
+* convert
+
+	`sel convert <format-from> <format-to> <location-from> [<location-to>=.]`
+
+	Converts a world to another format.
+
+	Available formats:
+
+	* [Anvil](http://minecraft.gamepedia.com/Anvil_file_format)
+
+		Minecraft's world format since 1.2.
+
+	* [LevelDB](http://minecraft.gamepedia.com/Pocket_Edition_level_format#LevelDB_format)
+
+		Minecraft: Pocket Edition's format since 1.0.0 (also known as 0.17).
+
+	* sel-be
+
+		SEL's format with big-endian data types.
+
+	* sel-le
+
+		SEL's format with little-endian data types.
+
+	* sel
+
+		SEL's format with the machine's endianness.
+
+	:warning: This feature is not fully supported yet and may not work properly
+
+	:warning: Only blocks are converted. Tiles and entities will be supported in the future.
 	
 * delete
 
@@ -77,31 +133,31 @@ sudo bash install.sh
 	
 	* hub
 		
-		The network part of a SEL Server. It can work as a proxy and is started using the `sel start` command. An hub alone doesn't provide what is needed to a server to work and it will need at least one connected node to work properly.
+		The network part of a SEL server. It can work as a proxy and it's started using the `sel start` command. An hub alone doesn't provide what is needed to a server to fully work and it will need at least one connected node to work properly.
 	
 	* node
 	
-		The world-related part of a SEL Server. It needs to connected to an hub in order to work and that action can be done using the `sel connect` command.
+		The gameplay-related part of a SEL server. It needs to be connected to an hub in order to work, action that can be done using the `sel connect` command.
 	
 	* full
 	
-		A full server is composed by an hub and a node that runs simultaneosly on the same machine. It can be started using `sel start` and the hub-node connection is done automatically.
+		A full server is composed by an hub and a node that run simultaneously on the same machine. It can be started using `sel start` and the hub-node connection is done automatically.
 		
 	Available options:
 	
 	* path
 	
 		```
-		path=.
-		path=../example
-		path=%appdata%/example
+		-path=.
+		-path=../example
+		-path=%appdata%/example
 		```
 	
-		Specifies the installation path for the server. By default it is `%appdata%\sel\<server-name>` on Windows and `~/sel/<server-name>` on Linux. If the path already exists every file needed by SEL will be overwritten.
+		Specifies the installation path for the server. By default it's `%appdata%\sel\<server-name>` on Windows and `~/sel/<server-name>` on Linux. If the path already exists every file needed by SEL will be overwritten.
 	
 	* version
 	
-		Specifies the version of SEL Server to be used. It can be a version in format `major.minor.release` (e.g. `1.0.0`), `latest` (for the latest version) or `none` (nothing will be downloaded and the source code should be moved in the installation folder manually).
+		Specifies the version of SEL Server to be used. It can be a version in format `major.minor.release` (e.g. `-version=1.0.0`), `latest` (for the latest version) or `none` (nothing will be downloaded and the source code should be moved in the installation folder manually).
 	
 	* edu
 	
@@ -123,7 +179,7 @@ sudo bash install.sh
 	
 * ping
 
-	`sel ping <ip>[:<port>] [<options>]`
+	`sel ping <ip>[:<port>] [-json]`
 	
 	Performs a ping to a Minecraft or a Minecraft: Pocket Edition server and prints the obtained informations.
 	
@@ -131,7 +187,7 @@ sudo bash install.sh
 	
 * query
 
-	`sel query <ip>[:<port>] [<options>]`
+	`sel query <ip>[:<port>] [-json]`
 	
 	Performs a [query](http://wiki.vg/Query) to a Minecraft or a Minecraft: Pocket Edition server which support the protocol and has it enabled. If no port is given either port 25565 (Minecraft's default port) and 19132 (Minecraft: Pocket Edition's default port) will be used.
 	
@@ -142,12 +198,32 @@ sudo bash install.sh
 	`sel rcon <ip>[:<port>=25575] <password>`
 	
 	Connects to a Minecraft or Minecraft: Pocket Edition server using the [RCON](http://wiki.vg/RCON) protocol.
+
+* shortcut (Linux only)
+
+	`sel shortcut <server>`
+
+	Creates a shortcut to a server to easily run server-related commands.
+
+	```
+	sel shortcut example
+	example build
+	example start
+	```
+
+	:warning: This command must be executed as superuser.
+
+* social
+
+	`sel social <ip>[:<port>]`
+
+	Retrieves and prints social (website and social accounts) informations about a SEL server or a server that supports the social JSON protocol.
 	
 * start
 
 	`sel start <server>`
 	
-	Starts an hub or full SEL Server.
+	Starts an hub or a full SEL Server.
 	
 * update
 
@@ -161,7 +237,7 @@ sudo bash install.sh
 	
 	Updates [sel-utils](https://github.com/sel-project/sel-utils), JSON files and libraries used by SEL.
 	
-	It's reccomended to run this command every time Minecraft or Minecraft: Pocket Edition is updated, in order to keep SEL servers updated.
+	It's reccomended to run this command every time Minecraft or Minecraft: Pocket Edition are updated, in order to avoid SEL servers' deprecation errors.
 	
 	`sel update <server> [<version>=latest]`
 	

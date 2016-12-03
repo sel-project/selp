@@ -19,7 +19,7 @@ import core.thread : Thread;
 import std.algorithm : min, canFind;
 import std.ascii : newline;
 import std.base64 : Base64;
-import std.conv : to;
+import std.conv : to, ConvException;
 import std.datetime : dur, StopWatch, AutoStart;
 import std.file;
 import std.json;
@@ -32,7 +32,7 @@ import std.typecons : Tuple, tuple;
 
 alias ServerTuple = Tuple!(string, "name", string, "location", string, "type", string[], "flags");
 
-enum __MANAGER__ = "3.4.2";
+enum __MANAGER__ = "4.0.0";
 enum __WEBSITE__ = "http://downloads.selproject.org/";
 enum __COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
 enum __UTILS__ = "https://raw.githubusercontent.com/sel-project/sel-utils/master/release.sa";
@@ -43,7 +43,7 @@ version(Windows) {
 	enum __EXECUTABLE__ = "main";
 }
 
-enum commands = ["about", "build", "connect", "console", "convert", "delete", "init", "latest", "list", "locate", "ping", "query", "rcon", "start", "update"];
+enum commands = ["about", "build", "connect", "console", "convert", "delete", "init", "latest", "list", "locate", "ping", "query", "rcon", "social", "start", "update"];
 
 enum noname = [".", "*", "all", "sel", "this", "manager", "lib", "libs", "util", "utils"];
 
@@ -102,6 +102,7 @@ void main(string[] args) {
 			version(linux) {
 				writeln("  shortcut\tcreate a shortcut for a server (requires root permissions)");
 			}
+			writeln("  social  \tperform a social ping to a server (not necessarely a SEL one)");
 			writeln("  start   \tstart an hub server");
 			writeln("  update  \tupdate a server");
 			break;
@@ -109,13 +110,8 @@ void main(string[] args) {
 			if(args.length > 1) {
 				auto server = getServerByName(args[1].toLower);
 				if(server.name != "") {
-					immutable exe = server.location ~ (server.type == "node" || server.type == "hubd" ? __EXECUTABLE__ : "build.jar");
-					if(exists(exe)) {
-						if(server.type == "node" || server.type == "hubd") {
-							wait(spawnShell(exe ~ " about"));
-						} else {
-							wait(spawnShell("java -jar " ~ exe ~ " about"));
-						}
+					if(exists(__EXECUTABLE__)) {
+						wait(spawnShell(__EXECUTABLE__ ~ " about"));
 					} else {
 						writeln("The server hasn't been built yet");
 					}
@@ -130,7 +126,7 @@ void main(string[] args) {
 			if(args.length > 1) {
 				auto server = getServerByName(args[1].toLower);
 				if(server.name != "") {
-					immutable exe = server.location ~ (["node", "hubd", "full"].canFind(server.type) ? __EXECUTABLE__ : "build.jar");
+					immutable exe = server.location ~ __EXECUTABLE__;
 					bool force = true;
 					foreach(size_t i, string arg; args) {
 						if(arg.startsWith("-force=")) {
@@ -144,6 +140,7 @@ void main(string[] args) {
 						}
 					}
 					if(server.type == "full") args ~= ["-I..", "-version=OneNode"];
+					if(server.flags.canFind("edu")) args ~= "-version=Edu";
 					if(!exists(exe) || force) {
 						StopWatch timer = StopWatch(AutoStart.yes);
 						string output;
@@ -164,45 +161,9 @@ void main(string[] args) {
 							string versions = cast(string)read(location ~ "plugins" ~ dirSeparator ~ ".versions");
 							wait(spawnShell("cd " ~ location ~ " && rdmd --build-only -I" ~ Settings.config ~ "utils" ~ dirSeparator ~ "d -J" ~ Settings.config ~ "utils" ~ dirSeparator ~ "json" ~ dirSeparator ~ "min -Jplugins " ~ ((){string str="";foreach(string g;games){str~="-version="~g~" ";}return str;}()) ~ " " ~ versions ~ " " ~ args[2..$].join(" ") ~ " main.d"));
 						}
-						if(server.type == "hubd" || server.type == "full") {
-							string location = server.location ~ (server.type == "full" ? "hubd" : "");
-							if(server.flags.canFind("edu")) args ~= "-version=Edu";
+						if(server.type == "hub" || server.type == "full") {
+							string location = server.location ~ (server.type == "full" ? "hub" : "");
 							wait(spawnShell("cd " ~ location ~ " && rdmd --build-only -I" ~ Settings.config ~ "utils" ~ dirSeparator ~ "d -J" ~ Settings.config ~ "utils" ~ dirSeparator ~ "json" ~ dirSeparator ~ "min -Jresources " ~ args[2..$].join(" ") ~ " main.d"));
-						}
-						if(server.type == "hub") {
-							if(hasCommand("javac")) {
-								if(exists(server.location ~ "bin")) rmdirRecurse(server.location ~ "bin");
-								mkdirRecurse(server.location ~ "bin");
-								version(Windows) {
-									//TODO copy lib into bin\lib
-									executeShell("cd " ~ server.location ~ " && dir /s /B *.java > " ~ server.location ~ "sources.txt");
-									executeShell("cd " ~ server.location ~ " && dir /s /B lib\\*.jar > " ~ server.location ~ "libs.txt");
-									executeShell("cd " ~ server.location ~ "bin && dir /s /B lib\\*jar > " ~ server.location ~ "bin" ~ dirSeparator ~ "libs.txt");
-								} else {
-									executeShell("cd " ~ server.location ~ " && cp -r lib bin/lib");
-									executeShell("cd " ~ server.location ~ " && find sel -name \"*.java\" > " ~ server.location ~ "sources.txt");
-									executeShell("cd " ~ server.location ~ " && find lib -name \"*.jar\" > " ~ server.location ~ "libs.txt");
-									executeShell("cd " ~ server.location ~ "bin && find lib -name \"*.jar\" > " ~ server.location ~ "bin" ~ dirSeparator ~ "libs.txt");
-								}
-								string libs = (cast(string)read(server.location ~ "libs.txt")).replace(newline, pathSeparator) ~ ".";
-								wait(spawnShell("cd " ~ server.location ~ " && javac -cp " ~ libs ~ " -d bin @sources.txt"));
-								version(Windows) {
-									executeShell("cd " ~ server.location ~ " && dir /s /B bin\\*.class > " ~ server.location ~ "sources.txt");
-								} else {
-									executeShell("cd " ~ server.location ~ "/lib && find sel -name \"*.class\" > " ~ server.location ~ "sources.txt");
-								}
-								//wait(spawnShell("cd " ~ server.location ~ " && java -cp " ~ libs ~ " @sources.txt"));
-								write(server.location ~ "bin" ~ dirSeparator ~ "manifest.txt", "Main-Class: sel.Main" ~ newline ~ "Class-Path: " ~ (cast(string)read(server.location ~ "bin" ~ dirSeparator ~ "libs.txt")).replace(newline, " ") ~ newline);
-								wait(spawnShell("cd " ~ server.location ~ "bin && jar cfm build.jar manifest.txt sel" ~ dirSeparator ~ "*"));
-								write(server.location ~ "build.jar", read(server.location ~ "bin" ~ dirSeparator ~ "build.jar"));
-								remove(server.location ~ "sources.txt");
-								remove(server.location ~ "libs.txt");
-								remove(server.location ~ "bin" ~ dirSeparator ~ "manifest.txt");
-								remove(server.location ~ "bin" ~ dirSeparator ~ "libs.txt");
-								remove(server.location ~ "bin" ~ dirSeparator ~ "build.jar");
-							} else {
-								writeln("Java Development Kit (JDK) is not installed on this device and the hub cannot be built without it");
-							}
 						}
 						timer.stop();
 						writeln("Done. Compilation took ", timer.peek.seconds, " seconds.");
@@ -277,17 +238,23 @@ void main(string[] args) {
 				auto server = getServerByName(args[1].toLower);
 				if(server.name != "") {
 					if(server.type == "node") {
-						string name = args.length > 2 ? args[2] : server.name;
-						string ip = args.length > 3 ? args[3] : "127.0.0.1";
-						string port = args.length > 4 ? args[4] : "28232";
-						version(Windows) {
-							void connect() {
-								wait(spawnShell("cd " ~ server.location ~ " && " ~ __EXECUTABLE__ ~ " " ~ name ~ " " ~ ip ~ " " ~ port));
+						args = args[2..$];
+						T find(T)(string key, T def) {
+							foreach(arg ; args) {
+								if(arg.startsWith("-" ~ key.toLower ~ "=")) {
+									try {
+										return to!T(arg[2+key.length..$]);
+									} catch(ConvException) {}
+								}
 							}
-						} else {
-							void connect() {
-								wait(spawnShell("cd " ~ server.location ~ " && ./" ~ __EXECUTABLE__ ~ " " ~ name ~ " " ~ ip ~ " " ~ port ~ " \"sel node\""));
-							}
+							return def;
+						}
+						string name = find("name", server.name);
+						string ip = find("ip", "127.0.0.1");
+						ushort port = find("port", cast(ushort)28232);
+						bool main = find("main", true);
+						void connect() {
+							wait(spawnShell("cd " ~ server.location ~ " && ." ~ dirSeparator ~ "main" ~ " " ~ name ~ " " ~ ip ~ " " ~ to!string(port) ~ " " ~ to!string(main) ~ " \"sel node\""));
 						}
 						wait(spawnShell(launch ~ " build " ~ server.name ~ " -force=false"));
 						immutable pdir = server.location ~ "plugins" ~ dirSeparator ~ ".configuration";
@@ -305,23 +272,18 @@ void main(string[] args) {
 					writeln("There's no server name \"", args[1].toLower, "\"");
 				}
 			} else {
-				writeln("Use: '", launch, " connect <node-name> [<name>=<node-name>] [<hub>=127.0.0.1] [<hub-port>=28232]'");
+				writeln("Use: '", launch, " connect <node-name> [<options>]'");
 			}
 			break;
 		case "console":
 			if(args.length > 1) {
 				ptrdiff_t vers = 1; // latest
-				foreach(size_t i, string arg; args) {
-					if(arg.startsWith("-version=")) {
-						vers = to!size_t(arg[9..$]);
-						args = args[0..i] ~ args[i+1..$];
-					}
-					if(arg.startsWith("-protocol=")) {
-						vers = to!size_t(arg[10..$]);
-						args = args[0..i] ~ args[i+1..$];
-					}
+				if(args.length > 2) {
+					try {
+						vers = to!uint(args[2]);
+					} catch(ConvException) {}
 				}
-				launchComponent!true("console", args[1..$], vers);
+				launchComponent!true("console", [args[1]], vers);
 			} else {
 				writeln("Use '", launch, " console <ip>[:<port>] <password> [<send-commands>=false]'");
 			}
@@ -524,14 +486,25 @@ void main(string[] args) {
 			}
 			break;
 		}
+		case "social":
+			if(args.length > 1) {
+				string str = launchComponent("social", args[1..$]);
+				writeln(str);
+			} else {
+				writeln("Use: '", launch, " social <ip>[:<port>]'");
+			}
+			break;
 		case "start":
 			if(args.length > 1) {
 				auto server = getServerByName(args[1].toLower);
 				if(server.name != "") {
 					if(server.type == "hub") {
-						wait(spawnShell("cd " ~ server.location ~ " && rdmd init.d && java -jar build.jar"));
-					} else if(server.type == "hubd") {
 						wait(spawnShell("cd " ~ server.location ~ " && ." ~ dirSeparator ~ "main"));
+					} else if(server.type == "full") {
+						if(exists(server.location ~ "resources" ~ dirSeparator ~ ".handshake")) remove(server.location ~ "resources" ~ dirSeparator ~ ".handshake");
+						executeShell("cd " ~ server.location ~ "node && ." ~ dirSeparator ~ "main"); //TODO connect with right args
+						wait(spawnShell("cd " ~ server.location ~ "hub && ." ~ dirSeparator ~ "main"));
+						if(exists(server.location ~ "resources" ~ dirSeparator ~ ".handshake")) remove(server.location ~ "resources" ~ dirSeparator ~ ".handshake");
 					} else {
 						writeln("Server \"", server.name, "\" is not an hub");
 					}
@@ -642,7 +615,7 @@ void printusage() {
 	if(exists(Settings.config ~ "sel.conf")) {
 		foreach(string s ; (cast(string)read(Settings.config ~ "sel.conf")).split(newline)) {
 			string[] spl = s.split(",");
-			if(spl.length == 3 || spl.length == 4) {
+			if(spl.length == 4) {
 				ret ~= ServerTuple(cast(string)Base64.decode(spl[0]), spl[1], spl[2], spl.length==4 ? spl[3].split("|") : []);
 			}
 		}
@@ -744,44 +717,3 @@ void systemDownload(string file, string dest) {
 		wait(spawnShell("wget " ~ file ~ " -O " ~ dest));
 	}
 }
-
-
-
-/*
-
-structure of sel (zipped source code)
-
-	hub/{hub_files}
-	node/{node_files}
-	README.md
-	LICENSE
-	install.bat
-	install.sh
-
-
-structure of an hub (java)
-
-	build.jar				runnable jar file (if compiled)
-	init.d					initialization for the settings
-	sel/../*.java			source code
-	sel/res/				default resources
-	lib/*.jar				libraries
-	resources/sel.txt		settings
-	resources/whitelist.txt	whitelisted players
-	resources/blacklist.txt	banned players
-	resources/index.html	html homepage
-
-
-structure of a node (d)
-
-	main(.exe)				runnable file (if compiled)
-	init.d					initialization for the plugins
-	main.d					file with main function
-	sel/../*.d				source code
-	sel/res					default resources
-	resources/plugins.txt	plugins activation
-	resources/{plugin}		plugin's resources
-	plugins/				plugins' source code
-	{xamarin files}
-
-*/
