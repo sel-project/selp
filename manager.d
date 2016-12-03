@@ -32,7 +32,7 @@ import std.typecons : Tuple, tuple;
 
 alias ServerTuple = Tuple!(string, "name", string, "location", string, "type", string[], "flags");
 
-enum __MANAGER__ = "4.0.0";
+enum __MANAGER__ = "4.0.1";
 enum __WEBSITE__ = "http://downloads.selproject.org/";
 enum __COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
 enum __UTILS__ = "https://raw.githubusercontent.com/sel-project/sel-utils/master/release.sa";
@@ -412,7 +412,7 @@ void main(string[] args) {
 				} else {
 					void printping(string type, JSONValue[string] value) {
 						writeln(type, " on ", value["address"].str, " (", value["ping"].integer, " ms)");
-						writeln("  MOTD: ", value["name"].str.replace("\n", "")[0..min(48, $)].strip); //TODO remove minecraft formatting codes
+						writeln("  MOTD: ", value["name"].str.replace("\n", "")[0..min(48, $)].strip); //TODO remove minecraft's formatting codes
 						writeln("  Players: ", value["online"].integer, "/", value["max"].integer);
 						writeln("  Version: unknown (protocol ", value["protocol"].integer, ")"); //TODO print the version after requesting the array with them
 					}
@@ -477,7 +477,7 @@ void main(string[] args) {
 					wait(spawnShell("cd " ~ server.location ~ " && rdmd --build-only -release script.d"));
 					remove(server.location ~ "script.d");
 					wait(spawnShell("sudo mv " ~ server.location ~ "script /usr/bin/" ~ server.name));
-					writeln("You can now use '", server.name, " <command> <options>' as a shortcut for 'sel <command> ", server.name, " <options>'");
+					writeln("You can now use '", server.name, " <command> <options>' as a shortcut for '", launch, " <command> ", server.name, " <options>'");
 				} else {
 					writeln("There's no server named \"", args[1].toLower, "\"");
 				}
@@ -542,10 +542,10 @@ void main(string[] args) {
 				switch(name) {
 					case "*":
 					case "all":
-						wait(spawnShell("sel update sel"));
-						wait(spawnShell("sel update libs"));
+						wait(spawnShell(launch ~ " update sel"));
+						wait(spawnShell(launch ~ " update libs"));
 						foreach(ServerTuple server ; serverTuples) {
-							wait(spawnShell("sel update " ~ server.name));
+							wait(spawnShell(launch ~ " update " ~ server.name));
 						}
 						break;
 					case "sel":
@@ -563,7 +563,7 @@ void main(string[] args) {
 					case "utils":
 						// download and update libraries and utils
 						systemDownload(__UTILS__, Settings.config ~ "utils.sa");
-						wait(spawnShell("sel uncompress " ~ Settings.config ~ "utils.sa " ~ Settings.config ~ "utils"));
+						wait(spawnShell("cd " ~ Settings.config ~ " && " ~  launch ~ " uncompress utils.sa utils"));
 						remove(Settings.config ~ "utils.sa");
 						// create minified files
 						wait(spawnShell("cd " ~ Settings.config ~ "utils" ~ dirSeparator ~ "json && rdmd minify.d"));
