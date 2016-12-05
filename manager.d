@@ -32,7 +32,7 @@ import std.typecons : Tuple, tuple;
 
 alias ServerTuple = Tuple!(string, "name", string, "location", string, "type", string[], "flags");
 
-enum __MANAGER__ = "4.0.1";
+enum __MANAGER__ = "4.0.2";
 enum __WEBSITE__ = "http://downloads.selproject.org/";
 enum __COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
 enum __UTILS__ = "https://raw.githubusercontent.com/sel-project/sel-utils/master/release.sa";
@@ -134,10 +134,6 @@ void main(string[] args) {
 							args = args[0..i] ~ args[i+1..$];
 							break;
 						}
-						if(arg == "-version=Pocket" || arg == "-version=Minecraft") {
-							// cannot modify this!
-							args = args[0..i] ~ args[i+1..$];
-						}
 					}
 					if(server.type == "full") args ~= ["-I..", "-version=OneNode"];
 					if(server.flags.canFind("edu")) args ~= "-version=Edu";
@@ -147,19 +143,9 @@ void main(string[] args) {
 						if(exists(exe)) remove(exe);
 						if(server.type == "node" || server.type == "full") {
 							string location = server.location ~ (server.type == "full" ? "node": "");
-							string[] games = ["Pocket", "Minecraft"];
-							if(exists(server.location ~ "plugins" ~ dirSeparator ~ ".configuration")) {
-								games = [];
-								write(server.location ~ "__version.d", "module v;import std.stdio;mixin(import(\".configuration\"));void main(string[] args){static if(is(typeof(__MCPE_ACCEPTED_PROTOCOLS__))){if(__MCPE_ACCEPTED_PROTOCOLS__.length>0){writeln(\"Pocket\");}}static if(is(typeof(__MC_ACCEPTED_PROTOCOLS__))){if(__MC_ACCEPTED_PROTOCOLS__.length>0){writeln(\"Minecraft\");}}}");
-								foreach(string g ; executeShell("cd " ~ server.location ~ " && rdmd -Jplugins __version.d").output.split("\n")) {
-									g = g.strip;
-									if(g != "") games ~= g;
-								}
-								remove(server.location ~ "__version.d");
-							}
-							wait(spawnShell("cd " ~ location ~ " && rdmd init.d"));
-							string versions = cast(string)read(location ~ "plugins" ~ dirSeparator ~ ".versions");
-							wait(spawnShell("cd " ~ location ~ " && rdmd --build-only -I" ~ Settings.config ~ "utils" ~ dirSeparator ~ "d -J" ~ Settings.config ~ "utils" ~ dirSeparator ~ "json" ~ dirSeparator ~ "min -Jplugins " ~ ((){string str="";foreach(string g;games){str~="-version="~g~" ";}return str;}()) ~ " " ~ versions ~ " " ~ args[2..$].join(" ") ~ " main.d"));
+							wait(spawnShell("cd " ~ location ~ " && rdmd -I.. init.d"));
+							string versions = cast(string)read(server.location ~ "resources" ~ dirSeparator ~ ".hidden" ~ dirSeparator ~ "versions");
+							wait(spawnShell("cd " ~ location ~ " && rdmd --build-only -I" ~ Settings.config ~ "utils" ~ dirSeparator ~ "d -J" ~ Settings.config ~ "utils" ~ dirSeparator ~ "json" ~ dirSeparator ~ "min -Jplugins " ~ versions ~ " " ~ args[2..$].join(" ") ~ " main.d"));
 						}
 						if(server.type == "hub" || server.type == "full") {
 							string location = server.location ~ (server.type == "full" ? "hub" : "");
