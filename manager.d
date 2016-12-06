@@ -112,7 +112,7 @@ void main(string[] args) {
 				if(server.name != "") {
 					immutable location = server.location ~ (server.type == "full" ? "hub" ~ dirSeparator : "") ~ dirSeparator;
 					if(exists(location ~ __EXECUTABLE__)) {
-						wait(spawnShell("cd " ~ location ~ " && " ~ __EXECUTABLE__ ~ " about"));
+						wait(spawnShell("cd " ~ location ~ " && ." ~ dirSeparator ~ "main about"));
 					} else {
 						writeln("The server hasn't been built yet");
 					}
