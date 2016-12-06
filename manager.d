@@ -243,11 +243,12 @@ void main(string[] args) {
 							wait(spawnShell("cd " ~ server.location ~ " && ." ~ dirSeparator ~ "main" ~ " " ~ name ~ " " ~ ip ~ " " ~ to!string(port) ~ " " ~ to!string(main) ~ " \"sel node\""));
 						}
 						wait(spawnShell(launch ~ " build " ~ server.name ~ " -force=false"));
-						immutable pdir = server.location ~ "plugins" ~ dirSeparator ~ ".configuration";
-						string protocols = exists(pdir) ? cast(string)read(pdir) : "";
+						immutable pdir = server.location ~ "resources" ~ dirSeparator ~ ".hidden" ~ dirSeparator ~ "rebuild";
+						if(exists(pdir)) remove(pdir);
 						connect();
 						// the node is built again if the the hub requires it
-						if(exists(pdir) && cast(string)read(pdir) != protocols) {
+						if(exists(pdir)) {
+							remove(pdir);
 							wait(spawnShell(launch ~ " build " ~ server.name ~ " -force=true"));
 							connect();
 						}
