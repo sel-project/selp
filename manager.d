@@ -32,7 +32,7 @@ import std.typecons : Tuple, tuple;
 
 alias ServerTuple = Tuple!(string, "name", string, "location", string, "type", string[], "flags");
 
-enum __MANAGER__ = "4.0.2";
+enum __MANAGER__ = "4.0.3";
 enum __WEBSITE__ = "http://downloads.selproject.org/";
 enum __COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
 enum __UTILS__ = "https://raw.githubusercontent.com/sel-project/sel-utils/master/release.sa";
@@ -43,7 +43,7 @@ version(Windows) {
 	enum __EXECUTABLE__ = "main";
 }
 
-enum commands = ["about", "build", "connect", "console", "convert", "delete", "init", "latest", "list", "locate", "ping", "query", "rcon", "social", "start", "update"];
+enum commands = ["about", "build", "connect", "console", "convert", "delete", "init", "latest", "list", "locate", "open", "ping", "query", "rcon", "social", "start", "update"];
 
 enum noname = [".", "*", "all", "sel", "this", "manager", "lib", "libs", "util", "utils"];
 
@@ -96,6 +96,7 @@ void main(string[] args) {
 			writeln("  latest  \tprint the latest stable version of SEL");
 			writeln("  list    \tlist every registered server");
 			writeln("  locate  \tprint the location of a server");
+			writeln("  open    \topen the file explorer on a server's location");
 			writeln("  ping    \tping a server (not necessarily a sel one)");
 			writeln("  query   \tquery a server (not necessarily a sel one)");
 			writeln("  rcon    \tconnect to a server through the rcon protocol");
@@ -390,6 +391,22 @@ void main(string[] args) {
 				}
 			} else {
 				writeln("Use '", launch, " locate <server-name>'");
+			}
+			break;
+		case "open":
+			if(args.length > 1) {
+				if(nameExists(args[1].toLower)) {
+					version(Windows) {
+						immutable cmd = "start";
+					} else {
+						immutable cmd = "nautilus";
+					}
+					wait(spawnShell(cmd ~ " " ~ getServerByName(args[1].toLower).location));
+				} else {
+					writeln("There's no server named \"", args[1].toLower, "\"");
+				}
+			} else {
+				writeln("Use '", launch, " open <server-name>'");
 			}
 			break;
 		case "ping":
