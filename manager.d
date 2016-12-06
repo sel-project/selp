@@ -110,8 +110,9 @@ void main(string[] args) {
 			if(args.length > 1) {
 				auto server = getServerByName(args[1].toLower);
 				if(server.name != "") {
-					if(exists(__EXECUTABLE__)) {
-						wait(spawnShell(__EXECUTABLE__ ~ " about"));
+					immutable location = server.location ~ (server.type == "full" ? "hub" ~ dirSeparator : "") ~ dirSeparator;
+					if(exists(location ~ __EXECUTABLE__)) {
+						wait(spawnShell("cd " ~ location ~ " && " ~ __EXECUTABLE__ ~ " about"));
 					} else {
 						writeln("The server hasn't been built yet");
 					}
