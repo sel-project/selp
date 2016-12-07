@@ -15,7 +15,7 @@
 module convert;
 
 import std.base64 : Base64URL;
-import std.file : write;
+import std.file : write, mkdirRecurse;
 import std.process : executeShell, wait, spawnShell;
 import std.random : uniform;
 import std.stdio : writeln;
@@ -49,12 +49,14 @@ void main(string[] args) {
 	format_from = toName(format_from);
 	format_to = toName(format_to);
 
-	writeln("converting world from ", format_from, " to ", format_to);
+	writeln("Setting up a converter");
 
 	// create a server and plugin
 	string serverName = randomName;
-	executeShell("sel init " ~ serverName ~ " node");
+	executeShell("sel init " ~ serverName ~ " node -version=latest");
 	string location = executeShell("sel locate " ~ serverName).output.strip;
+
+	// overwrite the main file
 	write(location ~ "main.d", q{
 			module main;
 
@@ -68,10 +70,20 @@ void main(string[] args) {
 			}
 		}.replace("{from}", format_from).replace("{to}", format_to).replace("{froml}", location_from).replace("{tol}", location_to));
 
-	// convert
-	wait(spawnShell("cd " ~ location ~ " && rdmd -version=NoRead main.d"));
+	// compile as a versionless node
 
-	// delete server and plugin
+	immutable hidden = location ~ "resources/.hidden/";
+	mkdirRecurse(hidden);
+	write(hidden ~ "protocols.1", "");
+	write(hidden ~ "protocols.2", "");
+	executeShell("sel build " ~ serverName);
+	
+	writeln("Converting world from ", format_from, " to ", format_to);
+
+	// convert
+	wait(spawnShell("sel connect " ~ serverName));
+
+	// delete server
 	executeShell("sel delete " ~ serverName);
 
 }

@@ -32,7 +32,7 @@ import std.typecons : Tuple, tuple;
 
 alias ServerTuple = Tuple!(string, "name", string, "location", string, "type", string[], "flags");
 
-enum __MANAGER__ = "4.0.3";
+enum __MANAGER__ = "4.1.1";
 enum __WEBSITE__ = "http://downloads.selproject.org/";
 enum __COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
 enum __UTILS__ = "https://raw.githubusercontent.com/sel-project/sel-utils/master/release.sa";
@@ -147,11 +147,11 @@ void main(string[] args) {
 							string location = server.location ~ (server.type == "full" ? "node": "");
 							wait(spawnShell("cd " ~ location ~ " && rdmd -I.. init.d"));
 							string versions = cast(string)read(server.location ~ "resources" ~ dirSeparator ~ ".hidden" ~ dirSeparator ~ "versions");
-							wait(spawnShell("cd " ~ location ~ " && rdmd --build-only -I" ~ Settings.config ~ "utils" ~ dirSeparator ~ "d -J" ~ Settings.config ~ "utils" ~ dirSeparator ~ "json" ~ dirSeparator ~ "min -Jplugins " ~ versions ~ " " ~ args[2..$].join(" ") ~ " main.d"));
+							wait(spawnShell("cd " ~ location ~ " && rdmd --build-only -I" ~ Settings.config ~ "utils" ~ dirSeparator ~ "d -J" ~ Settings.config ~ "utils" ~ dirSeparator ~ "json" ~ dirSeparator ~ "min -J" ~ server.location ~ "resources" ~ dirSeparator ~ ".hidden " ~ versions ~ " " ~ args[2..$].join(" ") ~ " main.d"));
 						}
 						if(server.type == "hub" || server.type == "full") {
 							string location = server.location ~ (server.type == "full" ? "hub" : "");
-							wait(spawnShell("cd " ~ location ~ " && rdmd --build-only -I" ~ Settings.config ~ "utils" ~ dirSeparator ~ "d -J" ~ Settings.config ~ "utils" ~ dirSeparator ~ "json" ~ dirSeparator ~ "min -Jresources " ~ args[2..$].join(" ") ~ " main.d"));
+							wait(spawnShell("cd " ~ location ~ " && rdmd --build-only -I" ~ Settings.config ~ "utils" ~ dirSeparator ~ "d -J" ~ Settings.config ~ "utils" ~ dirSeparator ~ "json" ~ dirSeparator ~ "min -J" ~ server.location ~ "resources " ~ args[2..$].join(" ") ~ " main.d"));
 						}
 						timer.stop();
 						writeln("Done. Compilation took ", timer.peek.seconds, " seconds.");
@@ -312,53 +312,68 @@ void main(string[] args) {
 			if(args.length > 2) {
 				string name = args[1].toLower;
 				string type = args[2].toLower;
-				string path = args.length > 3 ? args[3] : Settings.servers ~ name;
-				string vers = args.length > 4 ? args[4].toLower : "";
+				args = args[3..$];
+				T find(T)(string key, T def) {
+					foreach(arg ; args) {
+						if(arg.startsWith("-" ~ key.toLower ~ "=")) {
+							try {
+								return to!T(arg[2+key.length..$]);
+							} catch(ConvException) {}
+						}
+					}
+					return def;
+				}
+				string path = find("path", Settings.servers ~ name);
+				string vers = find("version", "latest").toLower;
+				string[] flags;
+				if(args.canFind("-edu")) flags ~= "edu";
+				if(args.canFind("-realm")) flags ~= "realm";
 				if(!nameExists(name)) {
 					if(!noname.canFind(name)) {
 						if(type == "hub" || type == "node" || type == "hubd") {
 							// get real path
 							version(Windows) {
-								wait(spawnShell("if not exists \"" ~ path ~ "\" md " ~ path));
+								executeShell("mkdir \\a " ~ path);
 								path = executeShell("cd " ~ path ~ " && cd").output.strip;
 							} else {
-								wait(spawnShell("mkdir -p " ~ path)); //TODO create if it doesn't exist
+								// not tested yet
+								executeShell("mkdir -p " ~ path);
 								path = executeShell("cd " ~ path ~ " && pwd").output.strip;
 							}
 							if(!path.endsWith(dirSeparator)) path ~= dirSeparator;
 							if(vers != "none") {
-								if(vers == "" || vers == "latest") vers = executeShell("sel latest").output.strip;
+								if(vers == "latest") vers = executeShell(launch ~ " latest").output.strip;
 								if(!vers.endsWith(".sa")) vers ~= ".sa";
 								if(!exists(Settings.cache ~ vers)) {
 									writeln("Downloading from " ~ __WEBSITE__ ~ vers);
 									mkdirRecurse(Settings.cache);
 									download(__WEBSITE__ ~ vers, Settings.cache ~ vers);
 								}
-								import std.zlib : UnCompress;
-								UnCompress uncompress = new UnCompress();
-								ubyte[] data = cast(ubyte[])uncompress.uncompress(read(Settings.cache ~ vers));
-								data ~= cast(ubyte[])uncompress.flush();
-								string file = cast(string)data;
-								while(file.length > 0) {
-									string pname = file[0..file.indexOf("\n")].replace("/", dirSeparator);
-									file = file[file.indexOf("\n")+1..$];
-									size_t length = to!size_t(file[0..file.indexOf("\n")]);
-									file = file[file.indexOf("\n")+1..$];
-									string content = file[0..length];
-									file = file[length..$];
-									if(pname.startsWith(type)) {
-										pname = pname[type.length+1..$];
-										if(pname.indexOf(dirSeparator) >= 0) {
-											mkdirRecurse(path ~ pname.split(dirSeparator)[0..$-1].join(dirSeparator));
-										}
-										write(path ~ pname, content);
-									}
-									if(pname == "LICENSE") {
-										write(path ~ "license.txt", content);
+								if(!exists(Settings.cache ~ "dec" ~ dirSeparator ~ vers)) {
+									executeShell("cd " ~ Settings.cache ~ " && " ~ launch ~ " uncompress " ~ vers ~ " dec" ~ vers);
+								}
+								// copy files from dec0.0.0.sa/ to path/
+								immutable dec = Settings.cache ~ "dec" ~ vers ~ dirSeparator;
+								void copy(string from, string to) {
+									version(Windows) {
+										executeShell("xcopy /S /I /Y " ~ from ~ " " ~ to);
+									} else {
+										// not tested yet
+										executeShell("cp -r " ~ from ~ " " ~ to);
 									}
 								}
+								copy(dec ~ "common", path ~ "common");
+								copy(dec ~ "res", path ~ "res");
+								if(type == "hub") {
+									copy(dec ~ "hub", path);
+								} else if(type == "node") {
+									copy(dec ~ "node", path);
+								} else if(dec == "full") {
+									copy(dec ~ "hub", path ~ "hub");
+									copy(dec ~ "node", path ~ "node");
+								}
 							}
-							saveServerTuples(serverTuples ~ ServerTuple(name, path, type, []));
+							saveServerTuples(serverTuples ~ ServerTuple(name, path, type, flags));
 						} else {
 							writeln("Invalid type \"", type, "\". Choose between \"hub\", \"hubd\" and \"node\"");
 						}
@@ -621,7 +636,7 @@ void printusage() {
 		foreach(string s ; (cast(string)read(Settings.config ~ "sel.conf")).split(newline)) {
 			string[] spl = s.split(",");
 			if(spl.length == 4) {
-				ret ~= ServerTuple(cast(string)Base64.decode(spl[0]), spl[1], spl[2], spl.length==4 ? spl[3].split("|") : []);
+				ret ~= ServerTuple(cast(string)Base64.decode(spl[0]), spl[1], spl[2], spl[3].split("|"));
 			}
 		}
 	}
@@ -651,7 +666,7 @@ void saveServerTuples(ServerTuple[] servers) {
 	mkdirRecurse(Settings.config);
 	string file = "# SEL MANAGER CONFIGURATION FILE" ~ newline;
 	foreach(ServerTuple server ; servers) {
-		file ~= Base64.encode(cast(ubyte[])server[0]) ~ "," ~ server[1] ~ "," ~ server[2] ~ newline;
+		file ~= Base64.encode(cast(ubyte[])server[0]) ~ "," ~ server[1] ~ "," ~ server[2] ~ "," ~ server[3].join("|") ~ newline;
 	}
 	write(Settings.config ~ "sel.conf", file);
 }
