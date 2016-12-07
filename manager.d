@@ -29,10 +29,11 @@ import std.process;
 import std.stdio : writeln, readln;
 import std.string;
 import std.typecons : Tuple, tuple;
+import std.zlib : Compress, UnCompress, HeaderFormat;
 
 alias ServerTuple = Tuple!(string, "name", string, "location", string, "type", string[], "flags");
 
-enum __MANAGER__ = "4.1.1";
+enum __MANAGER__ = "4.1.2";
 enum __WEBSITE__ = "http://downloads.selproject.org/";
 enum __COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
 enum __UTILS__ = "https://raw.githubusercontent.com/sel-project/sel-utils/master/release.sa";
@@ -86,26 +87,28 @@ void main(string[] args) {
 	switch(args[0]) {
 		case "help":
 			printusage();
-			writeln("  about   \tprint informations about a server");
-			writeln("  build   \tbuild a server");
-			writeln("  connect \tstart a node server and connect it to an hub");
-			writeln("  console \tconnect to a server throught the external console protocol");
-			writeln("  convert \tconvert a world to another format");
-			writeln("  delete  \tdelete a server");
-			writeln("  init    \tcreate a new server");
-			writeln("  latest  \tprint the latest stable version of SEL");
-			writeln("  list    \tlist every registered server");
-			writeln("  locate  \tprint the location of a server");
-			writeln("  open    \topen the file explorer on a server's location");
-			writeln("  ping    \tping a server (not necessarily a sel one)");
-			writeln("  query   \tquery a server (not necessarily a sel one)");
-			writeln("  rcon    \tconnect to a server through the rcon protocol");
+			writeln("  about       print informations about a server");
+			writeln("  build       build a server");
+			writeln("  compress    compress a folder into a sel archive");
+			writeln("  connect     start a node server and connect it to an hub");
+			writeln("  console     connect to a server throught the external console protocol");
+			writeln("  convert     convert a world to another format");
+			writeln("  delete      delete a server");
+			writeln("  init        create a new server");
+			writeln("  latest      print the latest stable version of SEL");
+			writeln("  list        list every registered server");
+			writeln("  locate      print the location of a server");
+			writeln("  open        open the file explorer on a server's location");
+			writeln("  ping        ping a server (not necessarily a sel one)");
+			writeln("  query       query a server (not necessarily a sel one)");
+			writeln("  rcon        connect to a server through the rcon protocol");
 			version(linux) {
-				writeln("  shortcut\tcreate a shortcut for a server (requires root permissions)");
+				writeln("  shortcut    create a shortcut for a server (requires root permissions)");
 			}
-			writeln("  social  \tperform a social ping to a server (not necessarely a SEL one)");
-			writeln("  start   \tstart an hub server");
-			writeln("  update  \tupdate a server");
+			writeln("  social      perform a social ping to a server (not necessarely a SEL one)");
+			writeln("  start       start an hub server");
+			writeln("  uncompress  uncompress a file archive");
+			writeln("  update      tupdate a server");
 			break;
 		case "about":
 			if(args.length > 1) {
@@ -165,61 +168,70 @@ void main(string[] args) {
 			}
 			break;
 		case "compress":
-			// sel compress <dir> <output-file> <compression=6>
-			immutable odir = args[2].indexOf(dirSeparator) >= 0 ? args[2].split(dirSeparator)[0..$-1].join(dirSeparator) : ".";
-			version(Windows) {
-				immutable input = executeShell("cd " ~ args[1] ~ " && cd").output.strip ~ dirSeparator;
-				immutable o = executeShell("cd " ~ odir ~ " && cd").output.strip;
-			} else {
-				immutable input = executeShell("cd " ~ args[1] ~ " && pwd").output.strip ~ dirSeparator;
-				immutable o = executeShell("cd " ~ odir ~ " && pwd").output.strip;
-			}
-			immutable name = args[2][args[2].indexOf(dirSeparator)+1..$];
-			immutable output = o ~ dirSeparator ~ (name.endsWith(".sa") ? name : name ~ ".sa");
-			writeln("Compressing ", input, " into ", output);
-			string[] ignore_files = [".selignore"];
-			string[] ignore_dirs = [];
-			if(exists(input ~ dirSeparator ~ ".selignore")) {
-				foreach(string line ; (cast(string)read(input ~ dirSeparator ~ ".selignore")).split("\n")) {
-					version(Windows) {
-						line = line.strip.replace(r"/", r"\");
-					} else {
-						line = line.strip.replace(r"\", r"/");
-					}
-					if(line != "") {
-						if(line.endsWith(dirSeparator)) ignore_dirs ~= line;
-						else ignore_files ~= line;
-					}
+			if(args.length > 2) {
+				int level = 6;
+				HeaderFormat format = HeaderFormat.gzip;
+				foreach(arg ; args[3..$]) {
+					if(arg == "-deflate") format = HeaderFormat.deflate;
+					else if(arg == "-gzip") format = HeaderFormat.gzip;
+					else if(arg.startsWith("-level=")) level = to!int(arg[7..$]);
 				}
-			}
-			string file;
-			size_t count = 0;
-			foreach(string path ; dirEntries(input, SpanMode.breadth)) {
-				immutable fpath = path;
-				if(path.startsWith(input)) path = path[input.length..$];
-				if(fpath.isFile && !ignore_files.canFind(path)) {
-					bool valid = true;
-					foreach(string dir ; ignore_dirs) {
-						if(path.startsWith(dir)) {
-							valid = false;
-							break;
+				immutable odir = args[2].indexOf(dirSeparator) >= 0 ? args[2].split(dirSeparator)[0..$-1].join(dirSeparator) : ".";
+				version(Windows) {
+					immutable input = executeShell("cd " ~ args[1] ~ " && cd").output.strip ~ dirSeparator;
+					immutable o = executeShell("cd " ~ odir ~ " && cd").output.strip;
+				} else {
+					immutable input = executeShell("cd " ~ args[1] ~ " && pwd").output.strip ~ dirSeparator;
+					immutable o = executeShell("cd " ~ odir ~ " && pwd").output.strip;
+				}
+				immutable name = args[2][args[2].indexOf(dirSeparator)+1..$];
+				immutable output = o ~ dirSeparator ~ (name.endsWith(".sa") ? name : name ~ ".sa");
+				writeln("Compressing ", input, " into ", output);
+				string[] ignore_files = [".selignore"];
+				string[] ignore_dirs = [];
+				if(exists(input ~ dirSeparator ~ ".selignore")) {
+					foreach(string line ; (cast(string)read(input ~ dirSeparator ~ ".selignore")).split("\n")) {
+						version(Windows) {
+							line = line.strip.replace(r"/", r"\");
+						} else {
+							line = line.strip.replace(r"\", r"/");
+						}
+						if(line != "") {
+							if(line.endsWith(dirSeparator)) ignore_dirs ~= line;
+							else ignore_files ~= line;
 						}
 					}
-					if(!valid) continue;
-					writeln("Adding ", path);
-					count++;
-					string content = cast(string)read(fpath);
-					file ~= path.replace(dirSeparator, "/") ~ "\n" ~ to!string(content.length) ~ "\n" ~ content;
 				}
+				string file;
+				size_t count = 0;
+				foreach(string path ; dirEntries(input, SpanMode.breadth)) {
+					immutable fpath = path;
+					if(path.startsWith(input)) path = path[input.length..$];
+					if(fpath.isFile && !ignore_files.canFind(path)) {
+						bool valid = true;
+						foreach(string dir ; ignore_dirs) {
+							if(path.startsWith(dir)) {
+								valid = false;
+								break;
+							}
+						}
+						if(!valid) continue;
+						writeln("Adding ", path);
+						count++;
+						string content = cast(string)read(fpath);
+						file ~= path.replace(dirSeparator, "/") ~ "\n" ~ to!string(content.length) ~ "\n" ~ content;
+					}
+				}
+				writeln("Added ", count, " files (", file.length, " bytes)");
+				Compress compress = new Compress(level, format);
+				ubyte[] data = cast(ubyte[])compress.compress(file);
+				data ~= cast(ubyte[])compress.flush();
+				writeln("Compressed into ", data.length, " bytes (", to!float(to!size_t((1 - data.length.to!float / file.length) * 10000)) / 100, "% smaller)");
+				write(output, data);
+				writeln("Saved at ", output);
+			} else {
+				writeln("Use '", launch, " compress <source> <destination> [<options>]'");
 			}
-			writeln("Added ", count, " files (", file.length, " bytes)");
-			import std.zlib : Compress;
-			Compress compress = new Compress(args.length > 3 ? to!uint(args[3]) : 6);
-			ubyte[] data = cast(ubyte[])compress.compress(file);
-			data ~= cast(ubyte[])compress.flush();
-			writeln("Compressed into ", data.length, " bytes");
-			write(output, data);
-			writeln("Saved at ", output);
 			break;
 		case "connect":
 			if(args.length > 1) {
@@ -536,24 +548,27 @@ void main(string[] args) {
 			}
 			break;
 		case "uncompress":
-			// sel uncompress <archive> <dir>
-			immutable output = args[2].endsWith(dirSeparator) ? args[2] : args[2] ~ dirSeparator;
-			import std.zlib : UnCompress;
-			UnCompress uncompress = new UnCompress();
-			ubyte[] data = cast(ubyte[])uncompress.uncompress(read(args[1]));
-			data ~= cast(ubyte[])uncompress.flush();
-			string file = cast(string)data;
-			while(file.length > 0) {
-				string pname = file[0..file.indexOf("\n")].replace("/", dirSeparator);
-				file = file[file.indexOf("\n")+1..$];
-				size_t length = to!size_t(file[0..file.indexOf("\n")]);
-				file = file[file.indexOf("\n")+1..$];
-				string content = file[0..length];
-				file = file[length..$];
-				if(pname.indexOf(dirSeparator) >= 0) {
-					mkdirRecurse(output ~ pname.split(dirSeparator)[0..$-1].join(dirSeparator));
+			if(args.length > 2) {
+				immutable output = args[2].endsWith(dirSeparator) ? args[2] : args[2] ~ dirSeparator;
+				import std.zlib : UnCompress;
+				UnCompress uncompress = new UnCompress();
+				ubyte[] data = cast(ubyte[])uncompress.uncompress(read(args[1]));
+				data ~= cast(ubyte[])uncompress.flush();
+				string file = cast(string)data;
+				while(file.length > 0) {
+					string pname = file[0..file.indexOf("\n")].replace("/", dirSeparator);
+					file = file[file.indexOf("\n")+1..$];
+					size_t length = to!size_t(file[0..file.indexOf("\n")]);
+					file = file[file.indexOf("\n")+1..$];
+					string content = file[0..length];
+					file = file[length..$];
+					if(pname.indexOf(dirSeparator) >= 0) {
+						mkdirRecurse(output ~ pname.split(dirSeparator)[0..$-1].join(dirSeparator));
+					}
+					write(output ~ pname, content);
 				}
-				write(output ~ pname, content);
+			} else {
+				writeln("Use '", launch, " uncompress <archive> <destination>'");
 			}
 			break;
 		case "update":
