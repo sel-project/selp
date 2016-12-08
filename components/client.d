@@ -14,7 +14,12 @@
  */
 module client;
 
+import core.stdc.stdlib : exit;
+import core.thread : Thread;
+
+import std.algorithm : canFind;
 import std.conv : to;
+import std.datetime : dur;
 import std.json;
 import std.random : uniform;
 import std.regex;
@@ -27,6 +32,7 @@ import std.zlib;
 static import sul.constants;
 static import sul.protocol;
 
+import sul.buffers : RemainingBytes, Triad;
 import sul.types.var;
 
 enum uint __version = to!uint(import("version.txt").strip);
@@ -75,6 +81,8 @@ void main(string[] args) {
 	string username = find("username", randomUsername());
 	string password = find("password", "");
 
+	immutable edu = args.canFind("-edu");
+
 	// list packets
 	string[] clientbound, serverbound;
 	foreach(immutable packet ; __traits(allMembers, Protocol.Play)) {
@@ -95,7 +103,174 @@ void main(string[] args) {
 
 	static if(__gamestr == "pocket") {
 
+		alias Raknet = sul.protocol.Protocol!("raknet", 8, sul.protocol.SoftwareType.client);
+
+		enum ubyte[] magic = [0, 255, 255, 0, 254, 254, 254, 254, 253, 253, 253, 253, 18, 52, 86, 120];
+
+		buffer = new ubyte[1536];
+		ushort mtu = 1464;
+		immutable clientId = uniform!"[]"(long.min, long.max);
+
+		uint sendCount = 0;
+		uint receiveCount = 0;
+
+		ubyte[][uint] awaitingAcks;
+
 		writeln("Connecting to ", address, " as ", username, " with Minecraft: Pocket Edition using protocol ", __protocol);
+
+		Socket socket = new UdpSocket(address.addressFamily);
+		socket.setOption(SocketOptionLevel.SOCKET, SocketOption.REUSEADDR, true);
+		socket.setOption(SocketOptionLevel.SOCKET, SocketOption.SNDTIMEO, dur!"seconds"(5));
+		socket.setOption(SocketOptionLevel.SOCKET, SocketOption.RCVTIMEO, dur!"seconds"(5));
+		socket.blocking = true;
+
+		void send(ubyte[] data) {
+			socket.sendTo(data, address);
+		}
+
+		void encapsulate(ubyte[] payload, bool play=true) {
+			//if(play) payload = 254 ~ payload;
+			if(play) {
+				// compression spree!
+				if(payload.length > 128) {
+					Compress compress = new Compress(6, HeaderFormat.deflate);
+					payload = cast(ubyte[])compress.compress(varuint(payload.length.to!uint).encode() ~ payload.dup);
+					payload ~= cast(ubyte[])compress.flush();
+					payload = Protocol.Play.Batch(payload.dup).encode();
+				}
+				payload = 254 ~ payload;
+			}
+			if(payload.length > mtu) {
+				//TODO split
+				writeln("packet is too long!");
+			} else {
+				ubyte[] packet = Raknet.Connection.Encapsulated(Triad(sendCount), Raknet.Types.Encapsulation(64, to!ushort(payload.length << 3), Triad(sendCount), Triad.init, ubyte.init, Raknet.Types.Split.init, RemainingBytes(payload))).encode();
+				awaitingAcks[sendCount] = packet;
+				send(packet);
+				sendCount++;
+			}
+		}
+
+		ubyte[] receive() {
+			Address a;
+			recv = socket.receiveFrom(buffer, a);
+			if(recv <= 0) {
+				writeln("Network error: ", lastSocketError);
+				socket.close();
+				exit(0);
+			}
+			return buffer[0..recv];
+		}
+
+		Raknet.Types.Address toAddress(Address from) {
+			Raknet.Types.Address ret;
+			if(from.addressFamily == AddressFamily.INET) {
+				auto v4 = new InternetAddress(from.toAddrString(), to!ushort(from.toPortString()));
+				ret.type = 4;
+				ret.ipv4 = cast(ubyte[])[(v4.addr >> 24) ^ 255, (v4.addr >> 16) ^ 255, (v4.addr >> 8) ^ 255, v4.addr ^ 255];
+				ret.port = v4.port;
+			} else if(from.addressFamily == AddressFamily.INET6) {
+				auto v6 =new Internet6Address(from.toAddrString(), to!ushort(from.toPortString()));
+				ret.type = 6;
+				ret.ipv6 = v6.addr;
+				ret.port = v6.port;
+			}
+			return ret;
+		}
+
+		// open connection request 1
+		send(Raknet.Login.OpenConnectionRequest1(magic, 8, RemainingBytes(new ubyte[1464])).encode());
+
+		// open connection response 1
+		auto ocr1 = Raknet.Login.OpenConnectionReply1().decode(receive());
+		mtu = ocr1.mtuLength;
+
+		// open connection request 2
+		send(Raknet.Login.OpenConnectionRequest2(magic, toAddress(address), mtu, clientId).encode());
+
+		// open connection response 2
+		auto ocr2 = Raknet.Login.OpenConnectionReply2().decode(receive());
+
+		// send client connect
+		encapsulate(Raknet.Login.ClientConnect(clientId, 0).encode(), false);
+
+		void delegate(ubyte[]) handle;
+
+		void handlePlay(ubyte[] payload) {
+			if(payload[0] == 254 && payload.length > 1) {
+				payload = payload[1..$];
+				switch(payload[0]) {
+
+					default:
+						break;
+				}
+			}
+		}
+
+		void handleLogin(ubyte[] payload) {
+			auto playstaus = Protocol.Play.PlayStatus().decode(payload[1..$]);
+			switch(playstaus.status) {
+				case Constants.PlayStatus.status.ok:
+					handle = &handlePlay;
+					break;
+				default:
+					writeln("unknown status ", playstaus.status);
+					exit(0);
+					break;
+			}
+		}
+
+		void handleServerHandshake(ubyte[] payload) {
+
+			auto sh = Raknet.Login.ServerHandshake().decode(payload);
+			encapsulate(Raknet.Login.ClientHandshake(sh.clientAddress, sh.systemAddresses, sh.ping, sh.pong).encode(), false);
+
+			//TODO login
+			encapsulate(Protocol.Play.Login(__protocol, edu, compress(new ubyte[8])).encode(), true);
+			handle = &handleLogin;
+
+		}
+		
+		handle = &handleServerHandshake;
+
+		// ping (keep alive thread)
+		new Thread({
+			long count = 0;
+			while(true) {
+				Thread.sleep(dur!"seconds"(4));
+				encapsulate(Raknet.Connection.Ping(count++).encode(), false);
+			}
+		}).start();
+
+		// start connection
+		while(true) {
+			ubyte[] data = receive();
+			switch(data[0]) {
+				case Raknet.Connection.Ack.packetId:
+					//TODO remove from array
+					break;
+				case Raknet.Connection.Nack.packetId:
+					//TODO resend
+					break;
+				case 128:..case 143:
+					auto encapsulated = Raknet.Connection.Encapsulated().decode(data);
+					data = encapsulated.encapsulation.payload;
+					send(Raknet.Connection.Ack([Raknet.Types.Acknowledge(true, encapsulated.count)]).encode());
+					if(data.length) {
+						switch(data[0]) {
+							case Raknet.Connection.Pong.packetId:
+								//TODO use to calculate latency
+								break;
+							default:
+								handle(encapsulated.encapsulation.payload);
+								break;
+						}
+					}
+					break;
+				default:
+					break;
+			}
+		}
 
 	} else {
 
@@ -208,6 +383,9 @@ void main(string[] args) {
 				case Protocol.Login.Disconnect.packetId:
 					writeln("Disconnected: ", unformat(Protocol.Login.Disconnect().decode!false(b).reason));
 					goto close;
+				case Protocol.Login.EncryptionRequest.packetId:
+					writeln("Error: you need to authenticate to connect to this server");
+					goto close;
 				case Protocol.Login.SetCompression.packetId:
 					thresold = Protocol.Login.SetCompression().decode!false(b).thresold;
 					compression = true;
@@ -266,14 +444,9 @@ void main(string[] args) {
 
 alias Logs = Tuple!(bool, "chat");
 
-struct Event {}
-
 string randomUsername() {
-	static if(__game == 1) {
-		size_t length = uniform!"[]"(1, 15);
-	} else {
-		size_t length = uniform!"[]"(3, 16);
-	}
+	static if(__game == 1) size_t length = uniform!"[]"(1, 15);
+	else size_t length = uniform!"[]"(3, 16);
 	char[] username = new char[length];
 	foreach(ref char c ; username) {
 		c = uniform!"[]"('a', 'z');
