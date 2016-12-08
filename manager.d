@@ -33,7 +33,7 @@ import std.zlib : Compress, UnCompress, HeaderFormat;
 
 alias ServerTuple = Tuple!(string, "name", string, "location", string, "type", string[], "flags");
 
-enum __MANAGER__ = "4.1.2";
+enum __MANAGER__ = "4.1.3";
 enum __WEBSITE__ = "http://downloads.selproject.org/";
 enum __COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
 enum __UTILS__ = "https://raw.githubusercontent.com/sel-project/sel-utils/master/release.sa";
@@ -44,7 +44,7 @@ version(Windows) {
 	enum __EXECUTABLE__ = "main";
 }
 
-enum commands = ["about", "build", "connect", "console", "convert", "delete", "init", "latest", "list", "locate", "open", "ping", "query", "rcon", "social", "start", "update"];
+enum commands = ["about", "build", "client", "connect", "console", "convert", "delete", "init", "latest", "list", "locate", "open", "ping", "query", "rcon", "social", "start", "update"];
 
 enum noname = [".", "*", "all", "sel", "this", "manager", "lib", "libs", "util", "utils"];
 
@@ -89,6 +89,7 @@ void main(string[] args) {
 			printusage();
 			writeln("  about       print informations about a server");
 			writeln("  build       build a server");
+			writeln("  client      simulate a Minecraft or Minecraft: Pocket Edition client");
 			writeln("  compress    compress a folder into a sel archive");
 			writeln("  connect     start a node server and connect it to an hub");
 			writeln("  console     connect to a server throught the external console protocol");
@@ -165,6 +166,50 @@ void main(string[] args) {
 				}
 			} else {
 				writeln("Use: '", launch, " build <server-name> [<options>]'");
+			}
+			break;
+		case "client":
+			if(args.length > 2) {
+				string g = args[1].toLower;
+				uint game = ["pocket", "pe", "mcpe"].canFind(g) ? 1 : (["minecraft", "pc", "mc"].canFind(g) ? 2 : 0);
+				if(game != 0) {
+					string ip = args[2];
+					args = args[3..$];
+					T find(T)(string key, T def) {
+						foreach(arg ; args) {
+							if(arg.startsWith("-" ~ key.toLower ~ "=")) {
+								try {
+									return to!T(arg[2+key.length..$]);
+								} catch(ConvException) {}
+							}
+						}
+						return def;
+					}
+					immutable gamestr = game == 1 ? "pocket" : "minecraft";
+					string username = find("username", "");
+					string password = find("password", "");
+					string options = find("options", "");
+					uint protocol = find("protocol", 0);
+					if(protocol == 0) {
+						foreach(string path ; dirEntries(Settings.utils ~ "json" ~ dirSeparator ~ "protocol", SpanMode.breadth)) {
+							if(path.isFile && path.indexOf(gamestr) > 0 && path.endsWith(".json")) {
+								uint p = to!uint(path[path.indexOf(gamestr)+gamestr.length..$-5]);
+								if(p > protocol) protocol = p;
+							}
+						}
+					}
+					immutable vers = protocol << 4 | game;
+					args = [ip];
+					if(username.length) args ~= ["-username=" ~ username];
+					if(password.length) args ~= ["-password=" ~ password];
+					if(options.length) args ~= ["-options=" ~ locationOf(options)];
+					launchComponent!true("client", [ip, username, password]);
+				} else {
+					writeln("Invalid game");
+				}
+			} else {
+				// client.exe ip:port username password
+				writeln("Use '", launch, " client <game> <ip>[:<port>] [<options>]'");
 			}
 			break;
 		case "compress":
