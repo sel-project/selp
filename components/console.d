@@ -162,7 +162,7 @@ void main(string[] args) {
 	ulong ping, ping_time;
 
 	new Thread({
-		size_t count = 0;
+		uint count = 0;
 		while(true) {
 			Thread.sleep(dur!"seconds"(5));
 			send(Protocol.Status.KeepAlive(count++).encode());
