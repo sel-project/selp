@@ -203,7 +203,7 @@ void main(string[] args) {
 					if(username.length) args ~= ["-username=" ~ username];
 					if(password.length) args ~= ["-password=" ~ password];
 					if(options.length) args ~= ["-options=" ~ locationOf(options)];
-					launchComponent!true("client", [ip, username, password], vers);
+					launchComponent!true("client", args, vers);
 				} else {
 					writeln("Invalid game");
 				}
