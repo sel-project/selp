@@ -45,6 +45,48 @@ sudo bash install.sh
 	
 	The `-force=false` switch will exit without compiling if an executable file already exists.
 	
+* client
+
+	`sel client <game> <ip>[:<port>] [<options>]`
+	
+	Simulates a Minecraft (`sel client minecraft`) or a Minecraft: Pocket Edition (`sel client pocket`) and connects to a server.
+	
+	Available options:
+	
+	* username
+	
+		Indicates the username that will be used to connect to the server. If not specified a random one will be generated.
+		
+	* password
+	
+		Indicates the password associated to the username and will be used to create a client session of the chosen game. If not specified the connection to server will be done in offline mode (without authentication).
+		
+		:warning: Authentication is not implemented yet.
+	
+	* options
+	
+		Indicates an option file.
+	
+* compress
+
+	`sel compress <source> <archive> [<options>]`
+	
+	Creates a sel archive.
+	
+	Available options:
+	
+	* level
+	
+		Indicates the level of compression (0-9). If this option is not set the compression level will be 6.
+		
+	* gzip
+	
+		Indicates that gzip will be the algorithm for the compression.
+		
+	* deflate
+	
+		Indicates that deflate will be the algorithm for the compression.
+	
 * connect
 
 	`sel connect <server> [<options>]`
@@ -177,6 +219,10 @@ sudo bash install.sh
 	
 	On linux systems it can be used to cd to the server: `cd $(sel locate example)`.
 	
+* open
+
+	`sel open <server>`
+	
 * ping
 
 	`sel ping <ip>[:<port>] [-json]`
@@ -224,6 +270,12 @@ sudo bash install.sh
 	`sel start <server>`
 	
 	Starts an hub or a full SEL Server.
+	
+* uncompress
+
+	`sel uncompress <archive> <destination>`
+	
+	Decompress a sel archive created with the `sel compress` command.
 	
 * update
 
