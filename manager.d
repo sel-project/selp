@@ -143,6 +143,7 @@ void main(string[] args) {
 					}
 					if(server.type == "full") args ~= ["-I..", "-version=OneNode"];
 					if(server.flags.canFind("edu")) args ~= "-version=Edu";
+					if(server.flags.canFind("realm")) args ~= "-version=Realm";
 					if(!exists(exe) || force) {
 						StopWatch timer = StopWatch(AutoStart.yes);
 						string output;

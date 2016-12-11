@@ -18,6 +18,8 @@ import core.stdc.stdlib : exit;
 import core.thread : Thread;
 
 import std.algorithm : canFind;
+import std.base64 : Base64, Base64URL;
+static import std.bitmanip;
 import std.conv : to;
 import std.datetime : dur;
 import std.json;
@@ -26,7 +28,9 @@ import std.regex;
 import std.socket;
 import std.stdio : writeln, readln;
 import std.string;
+import std.system : Endian;
 import std.typecons : Tuple;
+import std.uuid : randomUUID;
 import std.zlib;
 
 static import sul.constants;
@@ -116,6 +120,10 @@ void main(string[] args) {
 
 		ubyte[][uint] awaitingAcks;
 
+		ushort splitSend;
+
+		ubyte[][][ushort] splitReceived;
+
 		writeln("Connecting to ", address, " as ", username, " with Minecraft: Pocket Edition using protocol ", __protocol);
 
 		Socket socket = new UdpSocket(address.addressFamily);
@@ -197,27 +205,60 @@ void main(string[] args) {
 		void delegate(ubyte[]) handle;
 
 		void handlePlay(ubyte[] payload) {
-			if(payload[0] == 254 && payload.length > 1) {
-				payload = payload[1..$];
-				switch(payload[0]) {
-
-					default:
-						break;
-				}
+			writeln(payload[0]);
+			switch(payload[0]) {
+				case Protocol.Play.Batch.packetId:
+					UnCompress uncompress = new UnCompress();
+					ubyte[] batch = cast(ubyte[])uncompress.uncompress(Protocol.Play.Batch().decode(payload).data);
+					batch ~= cast(ubyte[])uncompress.flush();
+					while(batch.length) {
+						size_t length = varuint.fromBuffer(batch);
+						handlePlay(batch[0..length]);
+						batch = batch[length..$];
+					}
+					break;
+				case Protocol.Play.PlayStatus.packetId:
+					auto ps = Protocol.Play.PlayStatus().decode(payload);
+					if(ps.status == Constants.PlayStatus.status.spawned) {
+						writeln("spawned");
+						//TODO call event when spawned
+					}
+					break;
+				case Protocol.Play.Text.packetId:
+					auto text = Protocol.Play.Text().decode(payload);
+					if(text.type == Protocol.Play.Text.Raw.type) {
+						auto raw = Protocol.Play.Text.Raw().decode(payload);
+						writeln(raw.message);
+					}
+					break;
+				case Protocol.Play.Disconnect.packetId:
+					auto disconnect = Protocol.Play.Disconnect().decode(payload);
+					writeln("Disconnected: ", disconnect.message);
+					exit(0);
+					break;
+				default:
+					break;
 			}
 		}
 
 		void handleLogin(ubyte[] payload) {
-			auto playstaus = Protocol.Play.PlayStatus().decode(payload[1..$]);
+			auto playstaus = Protocol.Play.PlayStatus().decode(payload);
 			switch(playstaus.status) {
 				case Constants.PlayStatus.status.ok:
+					writeln("Connected to the server");
 					handle = &handlePlay;
+					return;
+				case Constants.PlayStatus.status.outdatedClient:
+					writeln("Could not connect: Outdated Client!");
+					break;
+				case Constants.PlayStatus.status.outdatedServer:
+					writeln("Could not connect: Outdated Server!");
 					break;
 				default:
-					writeln("unknown status ", playstaus.status);
-					exit(0);
+					writeln("Unknown status ", playstaus.status);
 					break;
 			}
+			exit(0);
 		}
 
 		void handleServerHandshake(ubyte[] payload) {
@@ -225,8 +266,19 @@ void main(string[] args) {
 			auto sh = Raknet.Login.ServerHandshake().decode(payload);
 			encapsulate(Raknet.Login.ClientHandshake(sh.clientAddress, sh.systemAddresses, sh.ping, sh.pong).encode(), false);
 
-			//TODO login
-			encapsulate(Protocol.Play.Login(__protocol, edu, compress(new ubyte[8])).encode(), true);
+			string chain_data = Base64URL.encode(cast(ubyte[])("{\"extraData\":{\"displayName\":\"" ~ username ~ "\",\"identity\":\"" ~ randomUUID().toString() ~ "\"}}")).replace("=", "");
+			string chain = "{\"chain\":[\"." ~ chain_data ~ ".\"]}";
+			string client_data = "." ~ Base64URL.encode(cast(ubyte[])("{\"SkinId\":\"Standard_Custom\",\"SkinData\":\"" ~ Base64.encode(new ubyte[8192]) ~ "\"}")).idup.replace("=", "") ~ ".";
+			ubyte[] data = new ubyte[4];
+			std.bitmanip.write!(uint, Endian.littleEndian)(data, chain.length.to!uint, 0);
+			data ~= cast(ubyte[])chain;
+			data ~= new ubyte[4];
+			std.bitmanip.write!(uint, Endian.littleEndian)(data, client_data.length.to!uint, chain.length + 4);
+			data ~= cast(ubyte[])client_data;
+			Compress compress = new Compress(7, HeaderFormat.deflate);
+			data = cast(ubyte[])compress.compress(data.dup);
+			data ~= cast(ubyte[])compress.flush();
+			encapsulate(Protocol.Play.Login(__protocol, edu, data).encode(), true);
 			handle = &handleLogin;
 
 		}
@@ -253,16 +305,42 @@ void main(string[] args) {
 					//TODO resend
 					break;
 				case 128:..case 143:
+					//TODO discard duplicated
+					//TODO send nacks
 					auto encapsulated = Raknet.Connection.Encapsulated().decode(data);
 					data = encapsulated.encapsulation.payload;
 					send(Raknet.Connection.Ack([Raknet.Types.Acknowledge(true, encapsulated.count)]).encode());
+					if(encapsulated.encapsulation.info & 16) {
+						auto split = encapsulated.encapsulation.split;
+						if(split.id !in splitReceived) {
+							splitReceived[split.id] = new ubyte[][split.count];
+						}
+						splitReceived[split.id][split.order] = data;
+						bool full = true;
+						data.length = 0;
+						foreach(ubyte[] s ; splitReceived[split.id]) {
+							if(s.length == 0) {
+								full = false;
+								break;
+							} else {
+								data ~= s;
+							}
+						}
+						if(full) {
+							splitReceived.remove(split.id);
+						} else {
+							break;
+						}
+					}
 					if(data.length) {
 						switch(data[0]) {
 							case Raknet.Connection.Pong.packetId:
 								//TODO use to calculate latency
 								break;
+							case 254:
+								if(data.length > 1) handle(data[1..$]);
+								break;
 							default:
-								handle(encapsulated.encapsulation.payload);
 								break;
 						}
 					}
