@@ -137,9 +137,7 @@ void main(string[] args) {
 		}
 
 		void encapsulate(ubyte[] payload, bool play=true) {
-			//if(play) payload = 254 ~ payload;
 			if(play) {
-				// compression spree!
 				if(payload.length > 128) {
 					Compress compress = new Compress(6, HeaderFormat.deflate);
 					payload = cast(ubyte[])compress.compress(varuint(payload.length.to!uint).encode() ~ payload.dup);
@@ -178,7 +176,7 @@ void main(string[] args) {
 				ret.ipv4 = cast(ubyte[])[(v4.addr >> 24) ^ 255, (v4.addr >> 16) ^ 255, (v4.addr >> 8) ^ 255, v4.addr ^ 255];
 				ret.port = v4.port;
 			} else if(from.addressFamily == AddressFamily.INET6) {
-				auto v6 =new Internet6Address(from.toAddrString(), to!ushort(from.toPortString()));
+				auto v6 = new Internet6Address(from.toAddrString(), to!ushort(from.toPortString()));
 				ret.type = 6;
 				ret.ipv6 = v6.addr;
 				ret.port = v6.port;
@@ -205,58 +203,64 @@ void main(string[] args) {
 		void delegate(ubyte[]) handle;
 
 		void handlePlay(ubyte[] payload) {
-			writeln(payload[0]);
-			switch(payload[0]) {
-				case Protocol.Play.Batch.packetId:
-					UnCompress uncompress = new UnCompress();
-					ubyte[] batch = cast(ubyte[])uncompress.uncompress(Protocol.Play.Batch().decode(payload).data);
-					batch ~= cast(ubyte[])uncompress.flush();
-					while(batch.length) {
-						size_t length = varuint.fromBuffer(batch);
-						handlePlay(batch[0..length]);
-						batch = batch[length..$];
-					}
-					break;
-				case Protocol.Play.PlayStatus.packetId:
-					auto ps = Protocol.Play.PlayStatus().decode(payload);
-					if(ps.status == Constants.PlayStatus.status.spawned) {
-						writeln("spawned");
-						//TODO call event when spawned
-					}
-					break;
-				case Protocol.Play.Text.packetId:
-					auto text = Protocol.Play.Text().decode(payload);
-					if(text.type == Protocol.Play.Text.Raw.type) {
-						auto raw = Protocol.Play.Text.Raw().decode(payload);
-						writeln(raw.message);
-					}
-					break;
-				case Protocol.Play.Disconnect.packetId:
-					auto disconnect = Protocol.Play.Disconnect().decode(payload);
-					writeln("Disconnected: ", disconnect.message);
-					exit(0);
-					break;
-				default:
-					break;
+			if(payload[0] == 254 && payload.length > 1) {
+				payload = payload[1..$];
+				switch(payload[0]) {
+					case Protocol.Play.Batch.packetId:
+						UnCompress uncompress = new UnCompress();
+						ubyte[] batch = cast(ubyte[])uncompress.uncompress(Protocol.Play.Batch().decode(payload).data);
+						batch ~= cast(ubyte[])uncompress.flush();
+						while(batch.length) {
+							size_t length = varuint.fromBuffer(batch);
+							handlePlay(batch[0..length]);
+							batch = batch[length..$];
+						}
+						break;
+					case Protocol.Play.PlayStatus.packetId:
+						auto ps = Protocol.Play.PlayStatus().decode(payload);
+						if(ps.status == Constants.PlayStatus.status.spawned) {
+							writeln("spawned");
+							//TODO call event when spawned
+						}
+						break;
+					case Protocol.Play.Text.packetId:
+						auto text = Protocol.Play.Text().decode(payload);
+						if(text.type == Protocol.Play.Text.Raw.type) {
+							auto raw = Protocol.Play.Text.Raw().decode(payload);
+							writeln(raw.message);
+						}
+						break;
+					case Protocol.Play.Disconnect.packetId:
+						auto disconnect = Protocol.Play.Disconnect().decode(payload);
+						writeln("Disconnected: ", disconnect.message);
+						exit(0);
+						break;
+					default:
+						break;
+				}
 			}
 		}
 
 		void handleLogin(ubyte[] payload) {
-			auto playstaus = Protocol.Play.PlayStatus().decode(payload);
-			switch(playstaus.status) {
-				case Constants.PlayStatus.status.ok:
-					writeln("Connected to the server");
-					handle = &handlePlay;
-					return;
-				case Constants.PlayStatus.status.outdatedClient:
-					writeln("Could not connect: Outdated Client!");
-					break;
-				case Constants.PlayStatus.status.outdatedServer:
-					writeln("Could not connect: Outdated Server!");
-					break;
-				default:
-					writeln("Unknown status ", playstaus.status);
-					break;
+			if(payload.length > 2 && payload[0] == 254 && payload[1] == Protocol.Play.PlayStatus.packetId) {
+				auto playstaus = Protocol.Play.PlayStatus().decode(payload[1..$]);
+				switch(playstaus.status) {
+					case Constants.PlayStatus.status.ok:
+						writeln("Connected to the server");
+						handle = &handlePlay;
+						return;
+					case Constants.PlayStatus.status.outdatedClient:
+						writeln("Could not connect: Outdated Client!");
+						break;
+					case Constants.PlayStatus.status.outdatedServer:
+						writeln("Could not connect: Outdated Server!");
+						break;
+					default:
+						writeln("Unknown status ", playstaus.status);
+						break;
+				}
+			} else {
+				writeln("Wrong packet received while waiting for PlayStatus");
 			}
 			exit(0);
 		}
@@ -264,6 +268,7 @@ void main(string[] args) {
 		void handleServerHandshake(ubyte[] payload) {
 
 			auto sh = Raknet.Login.ServerHandshake().decode(payload);
+			writeln(sh);
 			encapsulate(Raknet.Login.ClientHandshake(sh.clientAddress, sh.systemAddresses, sh.ping, sh.pong).encode(), false);
 
 			string chain_data = Base64URL.encode(cast(ubyte[])("{\"extraData\":{\"displayName\":\"" ~ username ~ "\",\"identity\":\"" ~ randomUUID().toString() ~ "\"}}")).replace("=", "");
@@ -337,10 +342,8 @@ void main(string[] args) {
 							case Raknet.Connection.Pong.packetId:
 								//TODO use to calculate latency
 								break;
-							case 254:
-								if(data.length > 1) handle(data[1..$]);
-								break;
 							default:
+								handle(data);
 								break;
 						}
 					}
