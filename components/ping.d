@@ -29,21 +29,24 @@ void main(string[] args) {
 
 	shared string[] ret;
 
-	string[] ipport = (args.length > 1 ? args[1] : "127.0.0.1").split(":");
-	string ip = ipport[0];
-	ushort port = ipport.length == 2 ? to!ushort(ipport[1]) : 0;
+	bool has_port = args[1].lastIndexOf(":") > args[1].lastIndexOf("]");
+	string ip = args[1].replace("[", "").replace("]", "");
+	ushort port = 0;
+	if(has_port) {
+		string[] spl = ip.split(":");
+		ip = spl[0..$-1].join(":");
+		port = to!ushort(spl[$-1]);
+	}
 
 	// Minecraft
 	try {
-		//TODO only connect if port is open
 		ushort p = port==0 ? 25565 : port;
 		TcpSocket socket = new TcpSocket();
 		socket.setOption(SocketOptionLevel.SOCKET, SocketOption.REUSEADDR, true);
 		socket.setOption(SocketOptionLevel.SOCKET, SocketOption.SNDTIMEO, dur!"msecs"(256));
 		socket.setOption(SocketOptionLevel.SOCKET, SocketOption.RCVTIMEO, dur!"seconds"(4));
 		socket.connect(getAddress(ip, p)[0]);
-		string address = ipport[0]; // servers with proxies or ddos protection may check the ip
-		socket.send(cast(ubyte[])[address.length + 6, 0, 0, address.length] ~ cast(ubyte[])address ~ cast(ubyte[])[(p >> 8) & 255, p & 255, 1]);
+		socket.send(cast(ubyte[])[ip.length + 6, 0, 0, ip.length] ~ cast(ubyte[])ip ~ cast(ubyte[])[(p >> 8) & 255, p & 255, 1]);
 		socket.send(cast(ubyte[])[1, 0]);
 		auto time = peek;
 		ubyte[] query;
@@ -75,7 +78,7 @@ void main(string[] args) {
 			}
 			string j = "\"minecraft\":{";
 			j ~= "\"name\":\"" ~ name.strip ~ "\",";
-			j ~= "\"address\":\"" ~ address ~ ":" ~ to!string(p) ~ "\",";
+			j ~= "\"address\":\"" ~ ip ~ ":" ~ to!string(p) ~ "\",";
 			j ~= "\"protocol\":" ~ json["version"].object["protocol"].integer.to!string ~ ",";
 			j ~= "\"online\":" ~ json["players"].object["online"].integer.to!string ~ ",";
 			j ~= "\"max\":" ~ json["players"].object["max"].integer.to!string ~ ",";
@@ -102,7 +105,7 @@ void main(string[] args) {
 			string[] query = (cast(string)buffer[35..r]).split(";");
 			string j = "\"pocket\":{";
 			j ~= "\"name\":\"" ~ query[1] ~ "\",";
-			j ~= "\"address\":\"" ~ ipport[0] ~ ":" ~ to!string(p) ~ "\",";
+			j ~= "\"address\":\"" ~ ip ~ ":" ~ to!string(p) ~ "\",";
 			j ~= "\"protocol\":" ~ query[2] ~ ",";
 			j ~= "\"online\":" ~ query[4] ~ ",";
 			j ~= "\"max\":" ~ query[5] ~ ",";

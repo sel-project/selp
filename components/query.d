@@ -24,27 +24,26 @@ import std.string;
 
 void main(string[] args) {
 
-	string ip = args.length > 1 ? args[1] : "127.0.0.1";
+	bool has_port = args[1].lastIndexOf(":") > args[1].lastIndexOf("]");
+	string ip = args[1].replace("[", "").replace("]", "");
 	ushort port = 0;
-	if(ip.lastIndexOf(":") > ip.lastIndexOf("]")) {
-		port = to!ushort(ip[ip.lastIndexOf(":")+1..$]);
-		ip = ip[0..ip.lastIndexOf(":")];
+	if(has_port) {
+		string[] spl = ip.split(":");
+		ip = spl[0..$-1].join(":");
+		port = to!ushort(spl[$-1]);
 	}
-	ip = ip.replace("[", "").replace("]", "");
-	try {
-		ip = getAddressInfo(ip)[0].address.toString().split(":")[0..$-1].join(":").replace("[", "").replace("]", "");
-	} catch(SocketException) {}
 
 	string[] ret;
 
 	foreach(ushort p ; port == 0 ? cast(ushort[])[25565, 19132] : [port]) {
 		try {
-			string res = query(parseAddress(ip, p));
+			string res = query(getAddress(ip, p)[0]);
 			if(res !is null) {
 				ret ~= res;
 			}
 		} catch(Throwable t) {
-			throw t;
+			stdwrite("{\"error\":\"" ~ t.msg ~ "\"}");
+			return;
 		}
 	}
 

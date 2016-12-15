@@ -49,17 +49,20 @@ alias Constants = SulConstants!("externalconsole", __protocol);
 
 void main(string[] args) {
 	
-	string ip = args.length > 1 ? args[1] : "127.0.0.1";
+	bool has_port = args[1].lastIndexOf(":") > args[1].lastIndexOf("]");
+	string ip = args[1].replace("[", "").replace("]", "");
 	ushort port = 19134;
-	if(ip.lastIndexOf(":") > ip.lastIndexOf("]")) {
-		port = to!ushort(ip[ip.lastIndexOf(":")+1..$]);
-		ip = ip[0..ip.lastIndexOf(":")];
+	if(has_port) {
+		string[] spl = ip.split(":");
+		ip = spl[0..$-1].join(":");
+		port = to!ushort(spl[$-1]);
 	}
 	Address address;
-	try {	
-		address = parseAddress(ip, port);
-	} catch(SocketException) {
-		address = getAddressInfo(ip.replace("[", "").replace("]", ""), to!string(port))[0].address;
+	try {
+		address = getAddress(ip, port)[0];
+	} catch(SocketException e) {
+		writeln("Address cannot be resolved: ", e.msg);
+		return;
 	}
 
 	ubyte[] buffer = new ubyte[2048];
@@ -67,7 +70,12 @@ void main(string[] args) {
 
 	Socket socket = new TcpSocket(address.addressFamily);
 	socket.blocking = true;
-	socket.connect(address);
+	try {
+		socket.connect(address);
+	} catch(SocketException e) {
+		writeln(e.msg);
+		return;
+	}
 	socket.send("classic");
 
 	bool send(ubyte[] data) {

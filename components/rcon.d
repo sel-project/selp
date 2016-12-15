@@ -26,17 +26,24 @@ import std.system : Endian;
 
 void main(string[] args) {
 
-	string ip = args.length > 1 ? args[1] : "127.0.0.1";
+	bool has_port = args[1].lastIndexOf(":") > args[1].lastIndexOf("]");
+	string ip = args[1].replace("[", "").replace("]", "");
 	ushort port = 25575;
-	if(ip.lastIndexOf(":") > ip.lastIndexOf("]")) {
-		port = to!ushort(ip[ip.lastIndexOf(":")+1..$]);
-		ip = ip[0..ip.lastIndexOf(":")];
+	if(has_port) {
+		string[] spl = ip.split(":");
+		ip = spl[0..$-1].join(":");
+		port = to!ushort(spl[$-1]);
 	}
-	ip = ip.replace("[", "").replace("]", "");
+	Address address;
+	try {
+		address = getAddress(ip, port)[0];
+	} catch(SocketException e) {
+		writeln("Address cannot be resolved: ", e.msg);
+		return;
+	}
 
 	string password = args.length > 2 ? args[2] : "";
 
-	Address address = parseAddress(ip, port);
 	ubyte[] buffer = new ubyte[1446];
 	ptrdiff_t recv;
 

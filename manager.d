@@ -513,18 +513,23 @@ void main(string[] args) {
 				if(args.canFind("-json")) {
 					writeln(str);
 				} else {
-					void printping(string type, JSONValue[string] value) {
-						writeln(type, " on ", value["address"].str, " (", value["ping"].integer, " ms)");
-						writeln("  MOTD: ", value["name"].str.replace("\n", "")[0..min(48, $)].strip); //TODO remove minecraft's formatting codes
-						writeln("  Players: ", value["online"].integer, "/", value["max"].integer);
-						writeln("  Version: unknown (protocol ", value["protocol"].integer, ")"); //TODO print the version after requesting the array with them
-					}
 					auto json = parseJSON(str);
-					if("minecraft" in json) {
-						printping("Minecraft", json["minecraft"].object);
-					}
-					if("pocket" in json) {
-						printping("Minecraft: Pocket Edition", json["pocket"].object);
+					auto error = "error" in json;
+					if(error) {
+						writeln("Error: ", (*error).str);
+					} else {
+						void printping(string type, JSONValue[string] value) {
+							writeln(type, " on ", value["address"].str, " (", value["ping"].integer, " ms)");
+							writeln("  MOTD: ", value["name"].str.replace("\n", "")[0..min(48, $)].strip); //TODO remove minecraft's formatting codes
+							writeln("  Players: ", value["online"].integer, "/", value["max"].integer);
+							writeln("  Version: unknown (protocol ", value["protocol"].integer, ")"); //TODO print the version after requesting the array with them
+						}
+						if("minecraft" in json) {
+							printping("Minecraft", json["minecraft"].object);
+						}
+						if("pocket" in json) {
+							printping("Minecraft: Pocket Edition", json["pocket"].object);
+						}
 					}
 				}
 			} else {
@@ -537,27 +542,32 @@ void main(string[] args) {
 				if(args.canFind("-json")) {
 					writeln(str);
 				} else {
-					void printquery(string type, JSONValue[string] value) {
-						writeln(type, " on ", value["address"].str, " (", value["ping"].integer, " ms)");
-						writeln("  MOTD: ", value["name"].str);
-						writeln("  Players: ", value["online"].integer, "/", value["max"].integer);
-						if(value["players"].array.length > 0) {
-							//writeln("  List: ", (){ string[] ret;foreach(JSONValue v;value["players"].array){ret~=v.str;}return ret.join(", "); }());
-						}
-						writeln("  Software: ", value["software"].str);
-						if(value["plugins"].array.length > 0) {
-							writeln("  Plugins:");
-							foreach(JSONValue v ; value["plugins"].array) {
-								writeln("    ", v["name"].str, " ", v["version"].str);
+					auto json = parseJSON(str);
+					auto error = "error" in json;
+					if(error) {
+						writeln("Error: ", (*error).str);
+					} else {
+						void printquery(string type, JSONValue[string] value) {
+							writeln(type, " on ", value["address"].str, " (", value["ping"].integer, " ms)");
+							writeln("  MOTD: ", value["name"].str);
+							writeln("  Players: ", value["online"].integer, "/", value["max"].integer);
+							if(value["players"].array.length > 0) {
+								//writeln("  List: ", (){ string[] ret;foreach(JSONValue v;value["players"].array){ret~=v.str;}return ret.join(", "); }());
+							}
+							writeln("  Software: ", value["software"].str);
+							if(value["plugins"].array.length > 0) {
+								writeln("  Plugins:");
+								foreach(JSONValue v ; value["plugins"].array) {
+									writeln("    ", v["name"].str, " ", v["version"].str);
+								}
 							}
 						}
-					}
-					auto json = parseJSON(str);
-					if("minecraft" in json) {
-						printquery("Minecraft", json["minecraft"].object);
-					}
-					if("pocket" in json) {
-						printquery("Minecraft: Pocket Edition", json["pocket"].object);
+						if("minecraft" in json) {
+							printquery("Minecraft", json["minecraft"].object);
+						}
+						if("pocket" in json) {
+							printquery("Minecraft: Pocket Edition", json["pocket"].object);
+						}
 					}
 				}
 			} else {

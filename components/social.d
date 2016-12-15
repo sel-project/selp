@@ -22,9 +22,20 @@ import std.string;
 
 void main(string[] args) {
 
-	string[] ipport = (args.length > 1 ? args[1] : "127.0.0.1").split(":");
-	string ip = ipport.length == 1 ? ipport[0] : ipport[0..$-1].join(":");
-	ushort port = ipport.length >= 2 ? to!ushort(ipport[$-1]) : 0;
+	bool has_port = args[1].lastIndexOf(":") > args[1].lastIndexOf("]");
+	string ip = args[1].replace("[", "").replace("]", "");
+	ushort port = 0;
+	if(has_port) {
+		string[] spl = ip.split(":");
+		ip = spl[0..$-1].join(":");
+		port = to!ushort(spl[$-1]);
+	}
+	try {
+		auto address = getAddress(ip, port)[0];
+	} catch(SocketException e) {
+		write("{\"error\":\"", e.msg, "\"}");
+		return;
+	}
 
 	Address tcp = getAddress(ip, port == 0 ? 25565 : port)[0];
 	Address udp = getAddress(ip, port == 0 ? 19132 : port)[0];
@@ -32,29 +43,33 @@ void main(string[] args) {
 	char[] buffer = new char[1024];
 	ptrdiff_t recv;
 
-	// try tcp (port | 25565)
-	socket = new TcpSocket(tcp);
-	socket.setOption(SocketOptionLevel.SOCKET, SocketOption.REUSEADDR, true);
-	socket.setOption(SocketOptionLevel.SOCKET, SocketOption.RCVTIMEO, dur!"seconds"(1));
-	socket.send(cast(ubyte[])[253]);
-	recv = socket.receive(buffer);
-	if(recv > 0) {
-		write(buffer[0..recv]);
-		return;
-	}
-	socket.close();
+	try {
+		// try tcp (port | 25565)
+		socket = new TcpSocket(tcp);
+		socket.setOption(SocketOptionLevel.SOCKET, SocketOption.REUSEADDR, true);
+		socket.setOption(SocketOptionLevel.SOCKET, SocketOption.RCVTIMEO, dur!"seconds"(1));
+		socket.send(cast(ubyte[])[253]);
+		recv = socket.receive(buffer);
+		if(recv > 0) {
+			write(buffer[0..recv]);
+			return;
+		}
+		socket.close();
+	} catch(SocketException) {}
 
-	// try udp (port | 19132)
-	socket = new UdpSocket();
-	socket.setOption(SocketOptionLevel.SOCKET, SocketOption.REUSEADDR, true);
-	socket.setOption(SocketOptionLevel.SOCKET, SocketOption.RCVTIMEO, dur!"seconds"(1));
-	socket.sendTo(cast(ubyte[])[253], udp);
-	recv = socket.receiveFrom(buffer, udp);
-	if(recv > 0) {
-		write(buffer[0..recv]);
-		return;
-	}
-	socket.close();
+	try {
+		// try udp (port | 19132)
+		socket = new UdpSocket();
+		socket.setOption(SocketOptionLevel.SOCKET, SocketOption.REUSEADDR, true);
+		socket.setOption(SocketOptionLevel.SOCKET, SocketOption.RCVTIMEO, dur!"seconds"(1));
+		socket.sendTo(cast(ubyte[])[253], udp);
+		recv = socket.receiveFrom(buffer, udp);
+		if(recv > 0) {
+			write(buffer[0..recv]);
+			return;
+		}
+		socket.close();
+	} catch(SocketException) {}
 
 	// fail
 	write("{}");
