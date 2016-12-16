@@ -41,11 +41,12 @@ void main(string[] args) {
 	// Minecraft
 	try {
 		ushort p = port==0 ? 25565 : port;
-		TcpSocket socket = new TcpSocket();
+		Address address = getAddress(ip, p)[0];
+		TcpSocket socket = new TcpSocket(address.addressFamily);
 		socket.setOption(SocketOptionLevel.SOCKET, SocketOption.REUSEADDR, true);
 		socket.setOption(SocketOptionLevel.SOCKET, SocketOption.SNDTIMEO, dur!"msecs"(256));
 		socket.setOption(SocketOptionLevel.SOCKET, SocketOption.RCVTIMEO, dur!"seconds"(4));
-		socket.connect(getAddress(ip, p)[0]);
+		socket.connect(address);
 		socket.send(cast(ubyte[])[ip.length + 6, 0, 0, ip.length] ~ cast(ubyte[])ip ~ cast(ubyte[])[(p >> 8) & 255, p & 255, 1]);
 		socket.send(cast(ubyte[])[1, 0]);
 		auto time = peek;
@@ -92,10 +93,10 @@ void main(string[] args) {
 	try {
 		ushort p = port==0 ? 19132 : port;
 		Address address = getAddress(ip, p)[0];
-		UdpSocket socket = new UdpSocket();
+		UdpSocket socket = new UdpSocket(address.addressFamily);
 		socket.setOption(SocketOptionLevel.SOCKET, SocketOption.REUSEADDR, true);
 		socket.setOption(SocketOptionLevel.SOCKET, SocketOption.SNDTIMEO, dur!"msecs"(256));
-		socket.setOption(SocketOptionLevel.SOCKET, SocketOption.RCVTIMEO, dur!"seconds"(4));
+		socket.setOption(SocketOptionLevel.SOCKET, SocketOption.RCVTIMEO, dur!"seconds"(40));
 		socket.sendTo(1 ~ new ubyte[8] ~ magic, address); // server may check the raknet's magic number
 		auto time = peek;
 		ubyte[] buffer = new ubyte[256];

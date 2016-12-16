@@ -165,6 +165,7 @@ void main(string[] args) {
 				socket.close();
 				exit(0);
 			}
+			//writeln(buffer);
 			return buffer[0..recv];
 		}
 
@@ -232,7 +233,7 @@ void main(string[] args) {
 						break;
 					case Protocol.Play.Disconnect.packetId:
 						auto disconnect = Protocol.Play.Disconnect().decode(payload);
-						writeln("Disconnected: ", disconnect.message);
+						writeln("Disconnected: ", disconnect.message.replaceAll(ctRegex!"§[a-zA-Z0-9]", ""));
 						exit(0);
 						break;
 					default:
@@ -242,34 +243,37 @@ void main(string[] args) {
 		}
 
 		void handleLogin(ubyte[] payload) {
-			if(payload.length > 2 && payload[0] == 254 && payload[1] == Protocol.Play.PlayStatus.packetId) {
-				auto playstaus = Protocol.Play.PlayStatus().decode(payload[1..$]);
-				switch(playstaus.status) {
-					case Constants.PlayStatus.status.ok:
-						writeln("Connected to the server");
-						handle = &handlePlay;
-						return;
-					case Constants.PlayStatus.status.outdatedClient:
-						writeln("Could not connect: Outdated Client!");
-						break;
-					case Constants.PlayStatus.status.outdatedServer:
-						writeln("Could not connect: Outdated Server!");
-						break;
-					default:
-						writeln("Unknown status ", playstaus.status);
-						break;
+			if(payload.length > 2 && payload[0] == 254) {
+				if(payload[1] == Protocol.Play.PlayStatus.packetId) {
+					auto playstaus = Protocol.Play.PlayStatus().decode(payload[1..$]);
+					switch(playstaus.status) {
+						case Constants.PlayStatus.status.ok:
+							writeln("Connected to the server");
+							handle = &handlePlay;
+							return;
+						case Constants.PlayStatus.status.outdatedClient:
+							writeln("Could not connect: Outdated Client!");
+							break;
+						case Constants.PlayStatus.status.outdatedServer:
+							writeln("Could not connect: Outdated Server!");
+							break;
+						default:
+							writeln("Unknown status: ", playstaus.status);
+							break;
+					}
+					exit(0);
+				} else if(payload[1] == Protocol.Play.Disconnect.packetId) {
+					return handlePlay(payload);
 				}
-			} else {
-				writeln("Wrong packet received while waiting for PlayStatus");
 			}
+			writeln("Wrong packet received while waiting for PlayStatus");
 			exit(0);
 		}
 
 		void handleServerHandshake(ubyte[] payload) {
 
 			auto sh = Raknet.Login.ServerHandshake().decode(payload);
-			writeln(sh);
-			encapsulate(Raknet.Login.ClientHandshake(sh.clientAddress, sh.systemAddresses, sh.ping, sh.pong).encode(), false);
+			encapsulate(Raknet.Login.ClientHandshake(toAddress(address), sh.systemAddresses, sh.ping, sh.pong).encode(), false);
 
 			string chain_data = Base64URL.encode(cast(ubyte[])("{\"extraData\":{\"displayName\":\"" ~ username ~ "\",\"identity\":\"" ~ randomUUID().toString() ~ "\"}}")).replace("=", "");
 			string chain = "{\"chain\":[\"." ~ chain_data ~ ".\"]}";
