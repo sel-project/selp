@@ -636,6 +636,9 @@ void main(string[] args) {
 		case "uncompress":
 			if(args.length > 2) {
 				immutable output = args[2].endsWith(dirSeparator) ? args[2] : args[2] ~ dirSeparator;
+				if(!exists(output)) {
+					mkdirRecurse(output);
+				}
 				import std.zlib : UnCompress;
 				UnCompress uncompress = new UnCompress();
 				ubyte[] data = cast(ubyte[])uncompress.uncompress(read(args[1]));
