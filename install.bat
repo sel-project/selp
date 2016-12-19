@@ -5,10 +5,10 @@ bitsadmin /transfer "SEL Download" https://raw.githubusercontent.com/sel-project
 rdmd --build-only manager.d
 rename manager.exe sel.exe
 del manager.d
-if exist "C:\Windows\System32\sel.exe" del C:\Windows\System32\sel.exe
-if exist "C:\Windows\SysWOW64\sel.exe" del C:\Windows\SysWOW64\sel.exe
-copy sel.exe C:\Windows\System32
-if exist "C:\Windows\SysWOW64" copy sel.exe C:\Windows\SysWOW64
+if exist "%windir%\System32\sel.exe" del %windir%\System32\sel.exe
+if exist "%windir%\SysWOW64\sel.exe" del %windir%\SysWOW64\sel.exe
+copy sel.exe %windir%\System32
+if exist "%windir%\SysWOW64" copy sel.exe %windir%\SysWOW64
 del sel.exe
 sel update utils
 pause
