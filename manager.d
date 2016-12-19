@@ -413,7 +413,7 @@ void main(string[] args) {
 				if(args.canFind("-realm")) flags ~= "realm";
 				if(!nameExists(name)) {
 					if(!noname.canFind(name)) {
-						if(type == "hub" || type == "node" || type == "hubd") {
+						if(type == "hub" || type == "node" || type == "full") {
 							// get real path
 							version(Windows) {
 								executeShell("mkdir \\a " ~ path);
@@ -458,7 +458,7 @@ void main(string[] args) {
 							}
 							saveServerTuples(serverTuples ~ ServerTuple(name, path, type, flags));
 						} else {
-							writeln("Invalid type \"", type, "\". Choose between \"hub\", \"hubd\" and \"node\"");
+							writeln("Invalid type \"", type, "\". Choose between \"full\", \"hub\", and \"node\"");
 						}
 					} else {
 						writeln("Cannot name a server \"", name, "\"");
@@ -467,7 +467,7 @@ void main(string[] args) {
 					writeln("A server named \"", name, "\" already exists");
 				}
 			} else {
-				writeln("Use '", launch, " init <server> [<hub|node|full>=full] [<options>]'");
+				writeln("Use '", launch, " init <server> [<hub|node|full>] [<options>]'");
 			}
 			break;
 		case "latest":
