@@ -74,7 +74,7 @@ void main(string[] args) {
 		}
 	} else {
 		Settings.home = locationOf("$HOME");
-		Settings.server = locationOf("$HOME");
+		Settings.servers = locationOf("$HOME");
 	}
 	if(!Settings.home.endsWith(dirSeparator)) Settings.home ~= dirSeparator;
 	if(!Settings.servers.endsWith(dirSeparator)) Settings.servers ~= dirSeparator;
