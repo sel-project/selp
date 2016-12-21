@@ -252,7 +252,7 @@ void main(string[] args) {
 					immutable o = executeShell("cd " ~ odir ~ " && pwd").output.strip;
 				}
 				immutable name = args[2][args[2].indexOf(dirSeparator)+1..$];
-				immutable ext = plugin ? ".spa" : ".sa";
+				immutable ext = plugin ? ".ssa" : ".sa";
 				immutable output = o ~ dirSeparator ~ (name.endsWith(ext) ? name : name ~ ext);
 				if(plugin && !exists(input ~ "package.json")) {
 					writeln("Cannot find plugin info at '", input, "package.json'");
@@ -300,10 +300,17 @@ void main(string[] args) {
 				data ~= cast(ubyte[])compress.flush();
 				writeln("Compressed into ", data.length, " bytes (", to!float(to!size_t((1 - data.length.to!float / file.length) * 10000)) / 100, "% smaller)");
 				if(plugin) {
-					ubyte[] pack = cast(ubyte[])read(input ~ "package.json");
-					foreach(ref ubyte b ; pack) b ^= 255;
-					data = new ubyte[4] ~ pack ~ data;
-					std.bitmanip.write!uint(data, pack.length.to!uint, 0);
+					try {
+						auto json = parseJSON(cast(string)read(input ~ "package.json"));
+						compress = new Compress(level, format);
+						ubyte[] pack = cast(ubyte[])compress.compress(toJSON(&json));
+						pack ~= cast(ubyte[])compress.flush();
+						data = cast(ubyte[])"plugn" ~ new ubyte[4] ~ pack ~ data;
+						std.bitmanip.write(data, pack.length.to!uint, 0);
+					} catch(JSONException e) {
+						writeln("Error whilst readin package.json: ", e.msg);
+						break;
+					}
 				}
 				write(output, data);
 				writeln("Saved at ", output);
