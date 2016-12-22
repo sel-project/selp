@@ -44,6 +44,12 @@ sudo bash install.sh
 	For example, you can use `-compiler=ldc` to compile using [LDC](https://wiki.dlang.org/LDC) or `-release` to compile in release mode.
 	
 	The `-force=false` switch will exit without compiling if an executable file already exists.
+
+* clear
+
+	`sel clear <*|server>`
+
+	Clears a server's cache or the whole SEL and RDMD cache.
 	
 * client
 

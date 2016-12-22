@@ -35,7 +35,7 @@ import std.zlib : Compress, UnCompress, HeaderFormat;
 
 alias ServerTuple = Tuple!(string, "name", string, "location", string, "type", string[], "flags");
 
-enum __MANAGER__ = "4.1.5";
+enum __MANAGER__ = "4.1.6";
 enum __WEBSITE__ = "http://downloads.selproject.org/";
 enum __COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
 enum __UTILS__ = "https://raw.githubusercontent.com/sel-project/sel-utils/master/release.sa";
@@ -46,7 +46,7 @@ version(Windows) {
 	enum __EXECUTABLE__ = "main";
 }
 
-enum commands = ["about", "build", "client", "connect", "console", "convert", "delete", "init", "latest", "list", "locate", "open", "ping", "query", "rcon", "social", "start", "update"];
+enum commands = ["about", "build", "clear", "client", "connect", "console", "convert", "delete", "init", "latest", "list", "locate", "open", "ping", "query", "rcon", "social", "start", "update"];
 
 enum noname = [".", "*", "all", "sel", "this", "manager", "lib", "libs", "util", "utils"];
 
@@ -99,6 +99,7 @@ void main(string[] args) {
 			printusage();
 			writeln("  about       print informations about a server");
 			writeln("  build       build a server");
+			writeln("  clear       clear a server's cache");
 			writeln("  client      simulate a Minecraft or Minecraft: Pocket Edition client");
 			writeln("  compress    compress a folder into a sel archive");
 			writeln("  connect     start a node server and connect it to an hub");
@@ -186,6 +187,40 @@ void main(string[] args) {
 				}
 			} else {
 				writeln("Use: '", launch, " build <server> [<options>]'");
+			}
+			break;
+		case "clear":
+			if(args.length == 2) {
+				void del(string location) {
+					size_t deleted = 0;
+					if(exists(location) && location.isDir) {
+						foreach(string path ; dirEntries(location, SpanMode.breadth)) {
+							if(path.isFile) {
+								try {
+									remove(path);
+									deleted++;
+								} catch(FileException) {}
+							}
+						}
+					}
+					writeln("Deleted ", deleted, " files from ", location);
+				}
+				if(args[1] == "*") {
+					string tmp = tempDir();
+					if(!tmp.endsWith(dirSeparator)) tmp ~= dirSeparator;
+					del(tmp ~ "sel");
+					del(tmp ~ ".rdmd");
+					del(tmp ~ "rdmd-0");
+				} else {
+					auto server = getServerByName(args[1]);
+					if(server.name != "") {
+						del(server.location ~ ".hidden");
+					} else {
+						writeln("There's no server named \"", args[1].toLower, "\"");
+					}
+				}
+			} else {
+				writeln("Use: '", launch, " clear <*|server>'");
 			}
 			break;
 		case "client":
