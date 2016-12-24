@@ -108,7 +108,7 @@ void main(string[] args) {
 						name = res["description"].str;
 					}
 					JSONValue[string] minecraft;
-					minecraft["name"] = name;
+					minecraft["motd"] = name;
 					minecraft["ip"] = ip;
 					minecraft["port"] = p;
 					minecraft["protocol"] = res["version"].object["protocol"].integer;
@@ -146,7 +146,7 @@ void main(string[] args) {
 					string[] query = res.split(";");
 					if(query[0] == "MCPE") {
 						JSONValue[string] pocket;
-						pocket["name"] = query[1];
+						pocket["motd"] = query[1];
 						pocket["ip"] = ip;
 						pocket["port"] = p;
 						pocket["protocol"] = to!uint(query[2]);

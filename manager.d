@@ -607,7 +607,7 @@ void main(string[] args) {
 					} else {
 						void printquery(string type, JSONValue[string] value) {
 							writeln(type, " on ", value["address"].str, " (", value["ping"].integer, " ms)");
-							writeln("  MOTD: ", value["name"].str);
+							writeln("  MOTD: ", value["motd"].str);
 							writeln("  Players: ", value["online"].integer, "/", value["max"].integer);
 							if(value["players"].array.length > 0) {
 								//writeln("  List: ", (){ string[] ret;foreach(JSONValue v;value["players"].array){ret~=v.str;}return ret.join(", "); }());
