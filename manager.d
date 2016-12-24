@@ -27,6 +27,7 @@ import std.json;
 import std.net.curl : get, download;
 import std.path : dirSeparator, pathSeparator;
 import std.process;
+import std.regex : ctRegex, replaceAll;
 import std.stdio : writeln, readln;
 import std.string;
 import std.typecons : Tuple, tuple;
@@ -35,7 +36,7 @@ import std.zlib : Compress, UnCompress, HeaderFormat;
 
 alias ServerTuple = Tuple!(string, "name", string, "location", string, "type", string[], "flags");
 
-enum __MANAGER__ = "4.1.6";
+enum __MANAGER__ = "4.1.7";
 enum __WEBSITE__ = "http://downloads.selproject.org/";
 enum __COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
 enum __UTILS__ = "https://raw.githubusercontent.com/sel-project/sel-utils/master/release.sa";
@@ -571,26 +572,26 @@ void main(string[] args) {
 					writeln(str);
 				} else {
 					auto json = parseJSON(str);
-					auto error = "error" in json;
-					if(error) {
-						writeln("Error: ", (*error).str);
-					} else {
-						void printping(string type, JSONValue[string] value) {
-							writeln(type, " on ", value["address"].str, " (", value["ping"].integer, " ms)");
-							writeln("  MOTD: ", value["name"].str.replace("\n", "")[0..min(48, $)].strip); //TODO remove minecraft's formatting codes
+					void printping(string type, JSONValue v) {
+						if(v.type == JSON_TYPE.STRING) {
+							writeln(v.str);
+						} else {
+							auto value = v.object;
+							writeln(type, " on ", value["ip"].str, ":", value["port"].integer, " (", value["ping"].integer, " ms)");
+							writeln("  MOTD: ", value["name"].str.split("\n")[0].strip.replaceAll(ctRegex!"§[a-zA-Z0-9]", ""));
 							writeln("  Players: ", value["online"].integer, "/", value["max"].integer);
-							writeln("  Version: unknown (protocol ", value["protocol"].integer, ")"); //TODO print the version after requesting the array with them
+							writeln("  Version: ", value["version"].str, " (protocol ", value["protocol"].integer, ")");
 						}
-						if("minecraft" in json) {
-							printping("Minecraft", json["minecraft"].object);
-						}
-						if("pocket" in json) {
-							printping("Minecraft: Pocket Edition", json["pocket"].object);
-						}
+					}
+					if("minecraft" in json) {
+						printping("Minecraft", json["minecraft"]);
+					}
+					if("pocket" in json) {
+						printping("Minecraft: Pocket Edition", json["pocket"]);
 					}
 				}
 			} else {
-				writeln("Use '", launch, " ping <ip>[:<port>]'");
+				writeln("Use '", launch, " ping <ip>[:<port>] [<options>]'");
 			}
 			break;
 		case "query":

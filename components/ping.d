@@ -16,6 +16,7 @@ module ping;
 
 import core.thread : Thread, dur;
 
+import std.algorithm : canFind;
 import std.conv : to;
 import std.datetime : Clock, UTC;
 import std.json;
@@ -38,85 +39,135 @@ void main(string[] args) {
 		port = to!ushort(spl[$-1]);
 	}
 
-	// Minecraft
-	try {
-		ushort p = port==0 ? 25565 : port;
-		Address address = getAddress(ip, p)[0];
-		TcpSocket socket = new TcpSocket(address.addressFamily);
-		socket.setOption(SocketOptionLevel.SOCKET, SocketOption.REUSEADDR, true);
-		socket.setOption(SocketOptionLevel.SOCKET, SocketOption.SNDTIMEO, dur!"msecs"(256));
-		socket.setOption(SocketOptionLevel.SOCKET, SocketOption.RCVTIMEO, dur!"seconds"(4));
-		socket.connect(address);
-		socket.send(cast(ubyte[])[ip.length + 6, 0, 0, ip.length] ~ cast(ubyte[])ip ~ cast(ubyte[])[(p >> 8) & 255, p & 255, 1]);
-		socket.send(cast(ubyte[])[1, 0]);
-		auto time = peek;
-		ubyte[] query;
-		ubyte[] buffer = new ubyte[16384];
-		ptrdiff_t r;
-		ulong ping;
-		while((r = socket.receive(buffer)) > 0) {
-			ping = peek - time;
-			query ~= buffer[0..r];
-		}
-		if(query.length > 3) {
-			removeVarint(query); // packet id
-			removeVarint(query); // protocol
-			removeVarint(query); // string length
-			auto json = parseJSON(cast(string)query).object;
-			string name = "";
-			if(json["description"].type == JSON_TYPE.OBJECT) {
-				if("extra" in json["description"].object) {
-					foreach(JSONValue value ; json["description"].object["extra"].array) {
-						if("text" in value) {
-							name ~= value["text"].str; 
-						}
-					}
-				} else {
-					name = json["description"].object["text"].str;
-				}
-			} else {
-				name = json["description"].str;
+	// check options
+	bool raw = args.canFind("-raw");
+	T find(T)(string key, T def) {
+		foreach(arg ; args) {
+			if(arg.startsWith(key)) {
+				try {
+					return to!T(arg[key.length..$]);
+				} catch(Exception) {}
 			}
-			string j = "\"minecraft\":{";
-			j ~= "\"name\":\"" ~ name.strip ~ "\",";
-			j ~= "\"address\":\"" ~ ip ~ ":" ~ to!string(p) ~ "\",";
-			j ~= "\"protocol\":" ~ json["version"].object["protocol"].integer.to!string ~ ",";
-			j ~= "\"online\":" ~ json["players"].object["online"].integer.to!string ~ ",";
-			j ~= "\"max\":" ~ json["players"].object["max"].integer.to!string ~ ",";
-			j ~= "\"ping\":" ~ to!string(ping / 2) ~ "}";
-			ret ~= j;
 		}
-		socket.close();
-	} catch(Throwable) {}
+		return def;
+	}
+	bool pc = ["pc", "minecraft", "mc"].canFind(find("-game=", "pc"));
+	bool pe = ["pe", "pocket", "mcpe"].canFind(find("-game=", "pe"));
+	uint send_timeout = find("-send-timeout=", 500);
+	uint recv_timeout = find("-recv-timeout=", 3000);
+
+	JSONValue[string] json;
+
+	// Minecraft
+	if(pc) {
+		try {
+			ushort p = port==0 ? 25565 : port;
+			Address address = getAddress(ip, p)[0];
+			TcpSocket socket = new TcpSocket(address.addressFamily);
+			socket.setOption(SocketOptionLevel.SOCKET, SocketOption.REUSEADDR, true);
+			socket.setOption(SocketOptionLevel.SOCKET, SocketOption.SNDTIMEO, dur!"msecs"(send_timeout));
+			socket.setOption(SocketOptionLevel.SOCKET, SocketOption.RCVTIMEO, dur!"msecs"(recv_timeout));
+			socket.connect(address);
+			socket.send(cast(ubyte[])[ip.length + 6, 0, 0, ip.length] ~ cast(ubyte[])ip ~ cast(ubyte[])[(p >> 8) & 255, p & 255, 1]);
+			socket.send(cast(ubyte[])[1, 0]);
+			ubyte[] query;
+			ubyte[] buffer = new ubyte[16384];
+			ulong ping = peek;
+			ptrdiff_t r = socket.receive(buffer);
+			if(r > 0) {
+				ping = peek - ping;
+				query = buffer[0..r].dup;
+				immutable length = readVarint(query);
+				while(query.length < length && (r = socket.receive(buffer)) > 0) {
+					query ~= buffer[0..r].dup;
+				}
+			}
+			if(readVarint(query) == 0 && readVarint(query) > 0) {
+				// recalculate ping
+				auto time = peek;
+				socket.send(cast(ubyte[])[9, 1, 0, 0, 0, 0, 0, 0, 0, 0]);
+				if(socket.receive(buffer) == 10 && buffer[1] == 1) {
+					ping = peek - time;
+				}
+				if(raw) {
+					json["minecraft"] = cast(string)query;
+				} else {
+					auto res = parseJSON(cast(string)query).object;
+					string name = "";
+					if(res["description"].type == JSON_TYPE.OBJECT) {
+						if("extra" in res["description"].object) {
+							foreach(JSONValue value ; res["description"].object["extra"].array) {
+								if("text" in value) {
+									name ~= value["text"].str; 
+								}
+							}
+						} else {
+							name = res["description"].object["text"].str;
+						}
+					} else {
+						name = res["description"].str;
+					}
+					JSONValue[string] minecraft;
+					minecraft["name"] = name;
+					minecraft["ip"] = ip;
+					minecraft["port"] = p;
+					minecraft["protocol"] = res["version"].object["protocol"].integer;
+					minecraft["version"] = res["version"].object["name"].str;
+					minecraft["online"] = res["players"].object["online"].integer;
+					minecraft["max"] = res["players"].object["max"].integer;
+					minecraft["ping"] = ping;
+					if("favicon" in res) minecraft["favicon"] = res["favicon"].str;
+					json["minecraft"] = minecraft;
+				}
+			}
+			socket.close();
+		} catch(Throwable) {}
+	}
 
 	// Minecraft: Pocket Edition
-	try {
-		ushort p = port==0 ? 19132 : port;
-		Address address = getAddress(ip, p)[0];
-		UdpSocket socket = new UdpSocket(address.addressFamily);
-		socket.setOption(SocketOptionLevel.SOCKET, SocketOption.REUSEADDR, true);
-		socket.setOption(SocketOptionLevel.SOCKET, SocketOption.SNDTIMEO, dur!"msecs"(256));
-		socket.setOption(SocketOptionLevel.SOCKET, SocketOption.RCVTIMEO, dur!"seconds"(40));
-		socket.sendTo(1 ~ new ubyte[8] ~ magic, address); // server may check the raknet's magic number
-		auto time = peek;
-		ubyte[] buffer = new ubyte[256];
-		ptrdiff_t r;
-		if((r = socket.receiveFrom(buffer, address)) > 35) {
-			// MCPE;server name;protocol;version;online;max
-			string[] query = (cast(string)buffer[35..r]).split(";");
-			string j = "\"pocket\":{";
-			j ~= "\"name\":\"" ~ query[1] ~ "\",";
-			j ~= "\"address\":\"" ~ ip ~ ":" ~ to!string(p) ~ "\",";
-			j ~= "\"protocol\":" ~ query[2] ~ ",";
-			j ~= "\"online\":" ~ query[4] ~ ",";
-			j ~= "\"max\":" ~ query[5] ~ ",";
-			j ~= "\"ping\":" ~ to!string((peek - time) / 2) ~ "}";
-			ret ~= j;
-		}
-		socket.close();
-	} catch(Throwable) {}
+	if(pe) {
+		try {
+			ushort p = port==0 ? 19132 : port;
+			Address address = getAddress(ip, p)[0];
+			UdpSocket socket = new UdpSocket(address.addressFamily);
+			socket.setOption(SocketOptionLevel.SOCKET, SocketOption.REUSEADDR, true);
+			socket.setOption(SocketOptionLevel.SOCKET, SocketOption.SNDTIMEO, dur!"msecs"(send_timeout));
+			socket.setOption(SocketOptionLevel.SOCKET, SocketOption.RCVTIMEO, dur!"msecs"(recv_timeout));
+			socket.sendTo(1 ~ new ubyte[8] ~ magic ~ new ubyte[8], address); // server may check the raknet's magic number
+			auto time = peek;
+			ubyte[] buffer = new ubyte[512];
+			ptrdiff_t r = socket.receiveFrom(buffer, address);
+			if(r > 35) { // id (1), ping id (8), server id (8), magic (16), string length (2)
+				// MCPE;server name;protocol;version;online;max;server_id;world_name;gametype;
+				string res = cast(string)buffer[35..r];
+				if(raw) {
+					json["pocket"] = res;
+				} else {
+					string[] query = res.split(";");
+					if(query[0] == "MCPE") {
+						JSONValue[string] pocket;
+						pocket["name"] = query[1];
+						pocket["ip"] = ip;
+						pocket["port"] = p;
+						pocket["protocol"] = to!uint(query[2]);
+						pocket["version"] = query[3];
+						pocket["online"] = to!uint(query[4]);
+						pocket["max"] = to!uint(query[5]);
+						if(query.length > 6) pocket["server_id"] = to!long(query[6]);
+						if(query.length > 7) pocket["world"] = query[7];
+						if(query.length > 8) pocket["gametype"] = query[8];
+						pocket["ping"] = peek - time;
+						json["pocket"] = pocket;
+					}
+				}
+			}
+			socket.close();
+		} catch(Throwable) {}
+	}
 
-	write("{", ret.join(","), "}");
+	JSONValue j = json;
+
+	write(toJSON(&j));
 
 }
 
@@ -125,9 +176,15 @@ void main(string[] args) {
 	return t.toUnixTime!long * 1000 + t.fracSecs.total!"msecs";
 }
 
-void removeVarint(ref ubyte[] buffer) {
-	while(buffer.length && (buffer[0] & 0b10000000)) {
+uint readVarint(ref ubyte[] buffer) {
+	uint value = 0;
+	uint shift = 0;
+	ubyte next = 0x80;
+	while(buffer.length && (next & 0x80)) {
+		next = buffer[0];
 		buffer = buffer[1..$];
+		value |= (next & 0x7F) << shift;
+		shift += 7;
 	}
-	if(buffer.length > 0) buffer = buffer[1..$];
+	return value;
 }

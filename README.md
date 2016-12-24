@@ -231,11 +231,33 @@ sudo bash install.sh
 	
 * ping
 
-	`sel ping <ip>[:<port>] [-json]`
+	`sel ping <ip>[:<port>] [<options>]`
 	
 	Performs a ping to a Minecraft or a Minecraft: Pocket Edition server and prints the obtained informations.
-	
-	The `-json` switch will print the informations in json format.
+
+	Available options:
+
+	* json
+
+		Prints the received informations in JSON format.
+
+	* raw
+
+		Prints the received informations without parsing them (in JSON for Minecraft and in semicolon-separated format in Minecraft: Pocket Edition).
+
+	* game
+
+		`-game=pc` or `-game=pe`
+
+		Specifies the game to ping. If no game is specified both Minecraft and Minecraft: Pocket Edition are pinged.
+
+	* send-timeout
+
+		Specifies the socket's send timeout in milliseconds.
+
+	* recv-timeout
+
+		Specifies the socket's receive timeout in milliseconds.
 	
 * query
 
