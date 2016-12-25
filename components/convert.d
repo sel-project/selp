@@ -14,8 +14,10 @@
  */
 module convert;
 
+import std.algorithm : canFind;
 import std.base64 : Base64URL;
 import std.file : write, mkdirRecurse;
+import std.path : dirSeparator;
 import std.process : executeShell, wait, spawnShell;
 import std.random : uniform;
 import std.stdio : writeln;
@@ -29,12 +31,18 @@ void main(string[] args) {
 	string location_to = args[4];
 
 	bool check(string format) {
-		return format == "sel" || format == "sel-le" || format == "sel-be" || format == "anvil" || format == "leveldb";
+		return ["sel", "sel-le", "sel-be", "anvil", "leveldb"].canFind(format);
 	}
 
 	// validate formats
-	if(!check(format_from)) return;
-	if(!check(format_to)) return;
+	if(!check(format_from)) {
+		writeln(format_from, " is not a valid format");
+		return;
+	}
+	if(!check(format_to)) {
+		writeln(format_to, " is not a valid format");
+		return;
+	}
 
 	string toName(string format) {
 		final switch(format) {
@@ -72,7 +80,7 @@ void main(string[] args) {
 
 	// compile as a versionless node
 
-	immutable hidden = location ~ "resources/.hidden/";
+	immutable hidden = location ~ ".hidden" ~ dirSeparator;
 	mkdirRecurse(hidden);
 	write(hidden ~ "protocols.1", "");
 	write(hidden ~ "protocols.2", "");
@@ -90,7 +98,7 @@ void main(string[] args) {
 
 @property string randomName() {
 	char[] ret;
-	foreach(size_t i ; 0..16) {
+	foreach(size_t i ; 0..8) {
 		ret ~= uniform!"[]"('a', 'z');
 	}
 	return ret.idup;
