@@ -86,7 +86,7 @@ string query(Address address) {
 
 	if("game_id" in info && (info["game_id"] == "MINECRAFT" || info["game_id"] == "MINECRAFTPE")) {
 		string ret = "";
-		ret ~= "\"ping\":" ~ to!string(ping / 4) ~ ",";
+		ret ~= "\"ping\":" ~ to!string(ping / 2) ~ ",";
 		ret ~= "\"address\":\"" ~ address.to!string ~ "\",";
 		ret ~= "\"name\":\"" ~ info["hostname"] ~ "\",";
 		ret ~= "\"online\":" ~ info["numplayers"] ~ ",";

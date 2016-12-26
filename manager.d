@@ -16,6 +16,8 @@ module manager;
 
 import core.thread : Thread;
 
+import etc.c.curl : CurlOption;
+
 import std.algorithm : min, canFind;
 import std.ascii : newline;
 import std.base64 : Base64;
@@ -24,7 +26,7 @@ import std.conv : to, ConvException;
 import std.datetime : dur, StopWatch, AutoStart;
 import std.file;
 import std.json;
-import std.net.curl : get, download;
+import std.net.curl : HTTP, get, download;
 import std.path : dirSeparator, pathSeparator;
 import std.process;
 import std.regex : ctRegex, replaceAll;
@@ -36,9 +38,10 @@ import std.zlib : Compress, UnCompress, HeaderFormat;
 
 alias ServerTuple = Tuple!(string, "name", string, "location", string, "type", string[], "flags");
 
-enum __MANAGER__ = "4.1.7";
+enum __MANAGER__ = "4.2.0";
 enum __WEBSITE__ = "http://downloads.selproject.org/";
 enum __COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
+enum __LANG__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/lang/";
 enum __UTILS__ = "https://raw.githubusercontent.com/sel-project/sel-utils/master/release.sa";
 
 version(Windows) {
@@ -895,9 +898,8 @@ string launchComponent(bool spawn=false)(string component, string[] args, ptrdif
 }
 
 void systemDownload(string file, string dest) {
-	version(Windows) {
-		wait(spawnShell("bitsadmin /transfer \"SEL Manager Download\" " ~ file ~ " " ~ dest));
-	} else {
-		wait(spawnShell("wget " ~ file ~ " -O " ~ dest));
-	}
+	HTTP http = HTTP();
+	http.handle.set(CurlOption.ssl_verifypeer, false);
+	http.handle.set(CurlOption.timeout, 10);
+	download(file, dest, http);
 }
