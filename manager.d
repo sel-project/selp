@@ -610,10 +610,11 @@ void main(string[] args) {
 					} else {
 						void printquery(string type, JSONValue[string] value) {
 							writeln(type, " on ", value["address"].str, " (", value["ping"].integer, " ms)");
-							writeln("  MOTD: ", value["name"].str);
+							writeln("  MOTD: ", value["motd"].str.strip.replaceAll(ctRegex!"§[a-fA-F0-9]", ""));
 							writeln("  Players: ", value["online"].integer, "/", value["max"].integer);
-							if(value["players"].array.length > 0) {
-								//writeln("  List: ", (){ string[] ret;foreach(JSONValue v;value["players"].array){ret~=v.str;}return ret.join(", "); }());
+							auto players = value["players"].array;
+							if(players.length > 0 && players.length < 32) {
+								writeln("  List: ", (){ string[] ret;foreach(JSONValue player;players){ret~=player.str;}return ret.join(", "); }());
 							}
 							writeln("  Software: ", value["software"].str);
 							if(value["plugins"].array.length > 0) {
@@ -792,7 +793,7 @@ void printusage() {
 	writeln("  sel <command> <server> [<options>]");
 	writeln("  sel <server> <command> [<options>]");
 	writeln("  sel <command> [<options>]");
-	writeln("  sel help <command>");
+	//writeln("  sel help <command>");
 	writeln();
 	writeln("Commands:");
 }

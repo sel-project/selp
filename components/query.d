@@ -18,6 +18,7 @@ import std.algorithm : max;
 import std.bitmanip;
 import std.conv : to, ConvException;
 import std.datetime : Clock, UTC, dur;
+import std.json : JSONValue;
 import std.socket;
 import std.stdio : stdwrite = write;
 import std.string;
@@ -33,26 +34,23 @@ void main(string[] args) {
 		port = to!ushort(spl[$-1]);
 	}
 
-	string[] ret;
+	JSONValue[string] ret;
 
 	foreach(ushort p ; port == 0 ? cast(ushort[])[25565, 19132] : [port]) {
 		try {
-			string res = query(getAddress(ip, p)[0]);
-			if(res !is null) {
-				ret ~= res;
-			}
+			query(getAddress(ip, p)[0], ret);
 		} catch(Throwable t) {
-			stdwrite("{\"error\":\"" ~ t.msg ~ "\"}");
-			return;
+			ret["error"] = t.msg;
+			break;
 		}
 	}
 
-	stdwrite("{", ret.join(","), "}");
+	stdwrite(JSONValue(ret).toString());
 
 }
 
 // returns a json!
-string query(Address address) {
+void query(Address address, ref JSONValue[string] ret) {
 
 	ulong ping, last_time;
 
@@ -66,7 +64,7 @@ string query(Address address) {
 	socket.sendTo(cast(ubyte[])[254, 253, 9, 0, 0, 0, 0], address);
 	scope(exit) socket.close();
 	last_time = peek;
-	if((recv = socket.receiveFrom(buffer, address)) <= 5 || recv >= buffer.length) return null;
+	if((recv = socket.receiveFrom(buffer, address)) <= 5 || recv >= buffer.length) return;
 	ping += peek - last_time;
 	ubyte[] token = new ubyte[4];
 	try {
@@ -76,7 +74,7 @@ string query(Address address) {
 	}
 	socket.sendTo(cast(ubyte[])[254, 253, 0, 0, 0, 0, 0] ~ token ~ new ubyte[4], address); // full stats
 	last_time = peek;
-	if((recv = socket.receiveFrom(buffer, address)) <= 16 || recv >= buffer.length) return null;
+	if((recv = socket.receiveFrom(buffer, address)) <= 16 || recv >= buffer.length) return;
 	ping += peek - last_time;
 
 	ubyte[] stats = buffer[5..recv];
@@ -84,36 +82,35 @@ string query(Address address) {
 	stats = stats[10..$];
 	auto players = parseValue(stats);
 
-	if("game_id" in info && (info["game_id"] == "MINECRAFT" || info["game_id"] == "MINECRAFTPE")) {
-		string ret = "";
-		ret ~= "\"ping\":" ~ to!string(ping / 2) ~ ",";
-		ret ~= "\"address\":\"" ~ address.to!string ~ "\",";
-		ret ~= "\"name\":\"" ~ info["hostname"] ~ "\",";
-		ret ~= "\"online\":" ~ info["numplayers"] ~ ",";
-		ret ~= "\"max\":" ~ info["maxplayers"] ~ ",";
-		ret ~= "\"software\":\"" ~ (info["plugins"].length ? info["plugins"].split(":")[0].strip : "Vanilla") ~ "\",";
-		ret ~= "\"plugins\":[" ~ ((){
-				string[] ret;
-				if(info["plugins"].length) {
-					foreach(string plugin ; info["plugins"].split(":")[1..$].join(":").split(";")) {
-						string[] spl = plugin.strip.split(" ");
-						if(spl.length > 0) {
-							ret ~= "{\"name\":\"" ~ spl[0..max($-1, 1)].join(" ").replace("_", " ") ~ "\",\"version\":\"" ~ (spl.length == 1 ? "unknown" : spl[$-1]) ~ "\"}";
-						}
-					}
+	auto game = "game_id" in info;
+	if(game && (*game == "MINECRAFT" || *game == "MINECRAFTPE")) {
+
+		JSONValue[string] json;
+		json["ping"] = ping / 2;
+		json["address"] = address.toString();
+		json["motd"] = info["hostname"];
+		json["online"] = to!uint(info["numplayers"]);
+		json["max"] = to!uint(info["maxplayers"]);
+		json["players"] = players;
+
+		if(info["plugins"].length) {
+			auto spl = info["plugins"].split(":");
+			json["software"] = spl[0].strip;
+			JSONValue[] plugins;
+			foreach(string plugin ; spl[1..$].join(":").split(";")) {
+				auto s = plugin.split(" ");
+				if(s.length > 1) {
+					plugins ~= JSONValue(["name": s[0..$-1].join(" "), "version": s[$-1]]);
 				}
-				return ret.join(",");
-			}()) ~ "],";
-		ret ~= "\"players\":[" ~ ((){
-				string[] ret;
-				foreach(string player ; players) {
-					ret ~= "\"" ~ player ~ "\"";
-				}
-				return ret.join(",");
-			}()) ~ "]";
-		return "\"" ~ (info["game_id"] == "MINECRAFT" ? "minecraft" : "pocket") ~ "\":{" ~ ret ~ "}";
-	} else {
-		return null;
+			}
+			json["plugins"] = plugins;
+		} else {
+			json["software"] = "Vanilla";
+			json["plugins"] = (JSONValue[]).init;
+		}
+
+		ret[*game == "MINECRAFT" ? "minecraft" : "pocket"] = json;
+
 	}
 
 }
