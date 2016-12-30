@@ -17,12 +17,13 @@ module client;
 import core.stdc.stdlib : exit;
 import core.thread : Thread;
 
-import std.algorithm : canFind;
+import std.algorithm : canFind, min;
 import std.base64 : Base64, Base64URL;
 static import std.bitmanip;
 import std.conv : to;
 import std.datetime : dur;
 import std.json;
+import std.math : ceil;
 import std.random : uniform;
 import std.regex;
 import std.socket;
@@ -54,6 +55,8 @@ alias Protocol = sul.protocol.Protocol!(__gamestr, __protocol, sul.protocol.Soft
 alias Types = Protocol.Types;
 
 alias Constants = sul.constants.Constants!(__gamestr, __protocol);
+
+enum unformatRegex = ctRegex!"§[a-fA-F0-9k-or]";
 
 void main(string[] args) {
 
@@ -115,12 +118,14 @@ void main(string[] args) {
 		ushort mtu = 1464;
 		immutable clientId = uniform!"[]"(long.min, long.max);
 
-		uint sendCount = 0;
-		uint receiveCount = 0;
+		int sendCount = 0;
+		int receiveCount = -1;
 
 		ubyte[][uint] awaitingAcks;
 
-		ushort splitSend;
+		uint[] lost;
+
+		ushort splitSend = 0;
 
 		ubyte[][][ushort] splitReceived;
 
@@ -147,8 +152,19 @@ void main(string[] args) {
 				payload = 254 ~ payload;
 			}
 			if(payload.length > mtu) {
-				//TODO split
-				writeln("packet is too long!");
+				uint count = ceil(payload.length.to!float / 1464f).to!uint;
+				uint sizes = ceil(payload.length.to!float / count).to!uint;
+				foreach(uint order ; 0..count) {
+					ubyte[] buffer = payload[order*sizes..min((order+1)*sizes, $)];
+					auto split = Raknet.Types.Split(count, splitSend, order);
+					auto encapsulation = Raknet.Types.Encapsulation(16 + 64, cast(ushort)(buffer.length * 8), Triad(sendCount), Triad.init, ubyte.init, split, RemainingBytes(buffer));
+					ubyte[] packet = Raknet.Connection.Encapsulated(Triad(sendCount), encapsulation).encode();
+					packet[0] = 140;
+					awaitingAcks[sendCount] = packet;
+					send(packet);
+					sendCount++;
+				}
+				splitSend++;
 			} else {
 				ubyte[] packet = Raknet.Connection.Encapsulated(Triad(sendCount), Raknet.Types.Encapsulation(64, to!ushort(payload.length << 3), Triad(sendCount), Triad.init, ubyte.init, Raknet.Types.Split.init, RemainingBytes(payload))).encode();
 				awaitingAcks[sendCount] = packet;
@@ -203,9 +219,8 @@ void main(string[] args) {
 
 		void delegate(ubyte[]) handle;
 
-		void handlePlay(ubyte[] payload) {
-			if(payload[0] == 254 && payload.length > 1) {
-				payload = payload[1..$];
+		void handlePlayImpl(ubyte[] payload) {
+			if(payload.length) {
 				switch(payload[0]) {
 					case Protocol.Play.Batch.packetId:
 						UnCompress uncompress = new UnCompress();
@@ -213,32 +228,48 @@ void main(string[] args) {
 						batch ~= cast(ubyte[])uncompress.flush();
 						while(batch.length) {
 							size_t length = varuint.fromBuffer(batch);
-							handlePlay(batch[0..length]);
+							handlePlayImpl(batch[0..length]);
 							batch = batch[length..$];
 						}
+						break;
+					case Protocol.Play.StartGame.packetId:
+						writeln(Protocol.Play.StartGame().decode(payload));
 						break;
 					case Protocol.Play.PlayStatus.packetId:
 						auto ps = Protocol.Play.PlayStatus().decode(payload);
 						if(ps.status == Constants.PlayStatus.status.spawned) {
-							writeln("spawned");
-							//TODO call event when spawned
+
 						}
+						break;
+					case Protocol.Play.MovePlayer.packetId:
+						auto move = Protocol.Play.MovePlayer().decode(payload);
+						//TODO compare with player's entity id and update last known position
 						break;
 					case Protocol.Play.Text.packetId:
 						auto text = Protocol.Play.Text().decode(payload);
 						if(text.type == Protocol.Play.Text.Raw.type) {
 							auto raw = Protocol.Play.Text.Raw().decode(payload);
-							writeln(raw.message);
+							writeln(raw.message.replaceAll(unformatRegex, ""));
 						}
+						break;
+					case Protocol.Play.AddPlayer.packetId:
+						//TODO create a list of known players
+						//writeln(Protocol.Play.AddPlayer().decode(payload));
 						break;
 					case Protocol.Play.Disconnect.packetId:
 						auto disconnect = Protocol.Play.Disconnect().decode(payload);
-						writeln("Disconnected: ", disconnect.message.replaceAll(ctRegex!"§[a-zA-Z0-9]", ""));
+						writeln("Disconnected: ", disconnect.message.replaceAll(unformatRegex, "").strip);
 						exit(0);
 						break;
 					default:
 						break;
 				}
+			}
+		}
+		
+		void handlePlay(ubyte[] payload) {
+			if(payload[0] == 254 && payload.length > 1) {
+				handlePlayImpl(payload[1..$]);
 			}
 		}
 
@@ -275,9 +306,9 @@ void main(string[] args) {
 			auto sh = Raknet.Login.ServerHandshake().decode(payload);
 			encapsulate(Raknet.Login.ClientHandshake(toAddress(address), sh.systemAddresses, sh.ping, sh.pong).encode(), false);
 
-			string chain_data = Base64URL.encode(cast(ubyte[])("{\"extraData\":{\"displayName\":\"" ~ username ~ "\",\"identity\":\"" ~ randomUUID().toString() ~ "\"}}")).replace("=", "");
-			string chain = "{\"chain\":[\"." ~ chain_data ~ ".\"]}";
-			string client_data = "." ~ Base64URL.encode(cast(ubyte[])("{\"SkinId\":\"Standard_Custom\",\"SkinData\":\"" ~ Base64.encode(new ubyte[8192]) ~ "\"}")).idup.replace("=", "") ~ ".";
+			string chain_data = Base64URL.encode(cast(ubyte[])(`{"extraData":{"displayName":"` ~ username ~ `","identity":"` ~ randomUUID().toString() ~ `"}}`)).replace("=", "");
+			string chain = `{"chain":[".` ~ chain_data ~ `."]}`;
+			string client_data = "." ~ Base64URL.encode(cast(ubyte[])(`{"SkinId":"Standard_Custom","SkinData":"` ~ Base64.encode(randomSkin()) ~ `"}`)).idup.replace("=", "") ~ ".";
 			ubyte[] data = new ubyte[4];
 			std.bitmanip.write!(uint, Endian.littleEndian)(data, chain.length.to!uint, 0);
 			data ~= cast(ubyte[])chain;
@@ -303,20 +334,67 @@ void main(string[] args) {
 			}
 		}).start();
 
+		// nack
+		new Thread({
+			while(true) {
+				foreach(i ; 0..5) {
+					Thread.sleep(dur!"seconds"(1));
+					if(lost.length) {
+						auto l = lost.dup;
+						Raknet.Connection.Nack packet;
+						do {
+							auto current = Raknet.Types.Acknowledge(true, Triad(l[0]), Triad(l[0]));
+							l = l[1..$];
+							while(l.length && l[0] == current.last + 1) {
+								current.unique = false;
+								current.last = Triad(l[0]);
+								l = l[1..$];
+							}
+							packet.packets ~= current;
+						} while(l.length);
+						send(packet.encode());
+					}
+				}
+				lost.length = 0; // don't ask too much for lost packets
+			}
+		}).start();
+
 		// start connection
 		while(true) {
 			ubyte[] data = receive();
 			switch(data[0]) {
 				case Raknet.Connection.Ack.packetId:
-					//TODO remove from array
+					foreach(ack ; Raknet.Connection.Ack().decode(data).packets) {
+						foreach(uint i ; ack.first..(ack.unique ? ack.first : ack.last)+1) {
+							awaitingAcks.remove(i);
+						}
+					}
 					break;
 				case Raknet.Connection.Nack.packetId:
-					//TODO resend
+					// mcpe doesn't repeat itself
 					break;
 				case 128:..case 143:
-					//TODO discard duplicated
-					//TODO send nacks
 					auto encapsulated = Raknet.Connection.Encapsulated().decode(data);
+					if(encapsulated.count < receiveCount) {
+						// discard if not in lost array
+						bool found = false;
+						foreach(i, l; lost) {
+							if(l == encapsulated.count) {
+								found = true;
+								lost = lost[0..i] ~ lost[i+1..$];
+								break;
+							}
+						}
+						if(!found) break; // duplicated
+					} else {
+						if(receiveCount + 1 != encapsulated.count) {
+							// lost some packets
+							foreach(uint i ; receiveCount+1..encapsulated.count) {
+								lost ~= i;
+							}
+						}
+						receiveCount = encapsulated.count;
+					}
 					data = encapsulated.encapsulation.payload;
 					send(Raknet.Connection.Ack([Raknet.Types.Acknowledge(true, encapsulated.count)]).encode());
 					if(encapsulated.encapsulation.info & 16) {
@@ -454,7 +532,7 @@ void main(string[] args) {
 			if(translate && (*translate).type == JSON_TYPE.STRING) {
 				ret ~= (*translate).str;
 			}
-			return ret.replaceAll(ctRegex!"§[a-zA-Z0-9]", "");
+			return ret.replaceAll(unformatRegex, "");
 		}
 
 		bool login = true;
@@ -538,4 +616,12 @@ string randomUsername() {
 		if(!uniform!"[]"(0, 4)) c -= 32;
 	}
 	return username.idup;
+}
+
+ubyte[] randomSkin() {
+	ubyte[] skin = new ubyte[8192];
+	foreach(ref b ; skin) {
+		b = uniform(0, 256) & 255;
+	}
+	return skin;
 }

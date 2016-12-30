@@ -581,7 +581,7 @@ void main(string[] args) {
 						} else {
 							auto value = v.object;
 							writeln(type, " on ", value["ip"].str, ":", value["port"].integer, " (", value["ping"].integer, " ms)");
-							writeln("  MOTD: ", value["motd"].str.split("\n")[0].strip.replaceAll(ctRegex!"§[a-fA-F0-9]", ""));
+							writeln("  MOTD: ", value["motd"].str.split("\n")[0].strip.replaceAll(ctRegex!"§[a-fA-F0-9k-or]", ""));
 							writeln("  Players: ", value["online"].integer, "/", value["max"].integer);
 							writeln("  Version: ", value["version"].str, " (protocol ", value["protocol"].integer, ")");
 						}
@@ -610,7 +610,7 @@ void main(string[] args) {
 					} else {
 						void printquery(string type, JSONValue[string] value) {
 							writeln(type, " on ", value["address"].str, " (", value["ping"].integer, " ms)");
-							writeln("  MOTD: ", value["motd"].str.strip.replaceAll(ctRegex!"§[a-fA-F0-9]", ""));
+							writeln("  MOTD: ", value["motd"].str.strip.replaceAll(ctRegex!"§[a-fA-F0-9k-or]", ""));
 							writeln("  Players: ", value["online"].integer, "/", value["max"].integer);
 							auto players = value["players"].array;
 							if(players.length > 0 && players.length < 32) {
