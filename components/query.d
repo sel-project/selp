@@ -17,7 +17,7 @@ module query;
 import std.algorithm : max;
 import std.bitmanip;
 import std.conv : to, ConvException;
-import std.datetime : Clock, UTC, dur;
+import std.datetime : StopWatch, AutoStart, dur;
 import std.json : JSONValue;
 import std.socket;
 import std.stdio : stdwrite = write;
@@ -52,7 +52,7 @@ void main(string[] args) {
 // returns a json!
 void query(Address address, ref JSONValue[string] ret) {
 
-	ulong ping, last_time;
+	ulong ping;
 
 	ubyte[] buffer = new ubyte[2 ^^ 16];
 	ptrdiff_t recv;
@@ -63,9 +63,10 @@ void query(Address address, ref JSONValue[string] ret) {
 	socket.setOption(SocketOptionLevel.SOCKET, SocketOption.RCVTIMEO, dur!"seconds"(2));
 	socket.sendTo(cast(ubyte[])[254, 253, 9, 0, 0, 0, 0], address);
 	scope(exit) socket.close();
-	last_time = peek;
+	auto timer = StopWatch(AutoStart.yes);
 	if((recv = socket.receiveFrom(buffer, address)) <= 5 || recv >= buffer.length) return;
-	ping += peek - last_time;
+	ping += timer.peek.usecs;
+	timer.stop();
 	ubyte[] token = new ubyte[4];
 	try {
 		write!int(token, to!int(cast(string)buffer[5..recv-1]), 0);
@@ -73,9 +74,10 @@ void query(Address address, ref JSONValue[string] ret) {
 		write!uint(token, to!uint(cast(string)buffer[5..recv-1]), 0);
 	}
 	socket.sendTo(cast(ubyte[])[254, 253, 0, 0, 0, 0, 0] ~ token ~ new ubyte[4], address); // full stats
-	last_time = peek;
+	timer.reset();
+	timer.start();
 	if((recv = socket.receiveFrom(buffer, address)) <= 16 || recv >= buffer.length) return;
-	ping += peek - last_time;
+	ping += timer.peek.usecs;
 
 	ubyte[] stats = buffer[5..recv];
 	auto info = parseKeyValue(stats);
@@ -86,7 +88,7 @@ void query(Address address, ref JSONValue[string] ret) {
 	if(game && (*game == "MINECRAFT" || *game == "MINECRAFTPE")) {
 
 		JSONValue[string] json;
-		json["ping"] = ping / 2;
+		json["ping"] = ping / 2000;
 		json["address"] = address.toString();
 		json["motd"] = info["hostname"];
 		json["online"] = to!uint(info["numplayers"]);
@@ -100,7 +102,7 @@ void query(Address address, ref JSONValue[string] ret) {
 			foreach(string plugin ; spl[1..$].join(":").split(";")) {
 				auto s = plugin.split(" ");
 				if(s.length > 1) {
-					plugins ~= JSONValue(["name": s[0..$-1].join(" "), "version": s[$-1]]);
+					plugins ~= JSONValue(["name": s[0..$-1].join(" ").strip, "version": s[$-1].strip]);
 				}
 			}
 			json["plugins"] = plugins;
@@ -113,11 +115,6 @@ void query(Address address, ref JSONValue[string] ret) {
 
 	}
 
-}
-
-@property ulong peek() {
-	auto t = Clock.currTime(UTC());
-	return t.toUnixTime!long * 1000 + t.fracSecs.total!"msecs";
 }
 
 string[string] parseKeyValue(ref ubyte[] buffer) {

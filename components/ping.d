@@ -14,11 +14,9 @@
  */
 module ping;
 
-import core.thread : Thread, dur;
-
 import std.algorithm : canFind;
 import std.conv : to;
-import std.datetime : Clock, UTC;
+import std.datetime : StopWatch, AutoStart, dur;
 import std.json;
 import std.socket;
 import std.stdio : write;
@@ -72,10 +70,12 @@ void main(string[] args) {
 			socket.send(cast(ubyte[])[1, 0]);
 			ubyte[] query;
 			ubyte[] buffer = new ubyte[16384];
-			ulong ping = peek;
+			ulong ping = 0;
+			auto timer = StopWatch(AutoStart.yes);
 			ptrdiff_t r = socket.receive(buffer);
 			if(r > 0) {
-				ping = peek - ping;
+				timer.stop();
+				ping = timer.peek.msecs;
 				query = buffer[0..r].dup;
 				immutable length = readVarint(query);
 				while(query.length < length && (r = socket.receive(buffer)) > 0) {
@@ -84,10 +84,11 @@ void main(string[] args) {
 			}
 			if(readVarint(query) == 0 && readVarint(query) > 0) {
 				// recalculate ping
-				auto time = peek;
+				timer.reset();
+				timer.start();
 				socket.send(cast(ubyte[])[9, 1, 0, 0, 0, 0, 0, 0, 0, 0]);
 				if(socket.receive(buffer) == 10 && buffer[1] == 1) {
-					ping = peek - time;
+					ping = timer.peek.msecs;
 				}
 				if(raw) {
 					json["minecraft"] = cast(string)query;
@@ -134,7 +135,7 @@ void main(string[] args) {
 			socket.setOption(SocketOptionLevel.SOCKET, SocketOption.SNDTIMEO, dur!"msecs"(send_timeout));
 			socket.setOption(SocketOptionLevel.SOCKET, SocketOption.RCVTIMEO, dur!"msecs"(recv_timeout));
 			socket.sendTo(1 ~ new ubyte[8] ~ magic ~ new ubyte[8], address); // server may check the raknet's magic number
-			auto time = peek;
+			auto timer = StopWatch(AutoStart.yes);
 			ubyte[] buffer = new ubyte[512];
 			ptrdiff_t r = socket.receiveFrom(buffer, address);
 			if(r > 35) { // id (1), ping id (8), server id (8), magic (16), string length (2)
@@ -144,19 +145,28 @@ void main(string[] args) {
 					json["pocket"] = res;
 				} else {
 					string[] query = res.split(";");
-					if(query[0] == "MCPE") {
+					@property string next() {
+						string ret = query[0];
+						query = query[1..$];
+						while(query.length && ret[$-1] == '\\') {
+							ret ~= ";" ~ query[0];
+							query = query[1..$];
+						}
+						return ret;
+					}
+					if(next == "MCPE") {
 						JSONValue[string] pocket;
-						pocket["motd"] = query[1];
+						pocket["motd"] = next;
 						pocket["ip"] = ip;
 						pocket["port"] = p;
-						pocket["protocol"] = to!uint(query[2]);
-						pocket["version"] = query[3];
-						pocket["online"] = to!uint(query[4]);
-						pocket["max"] = to!uint(query[5]);
-						if(query.length > 6) pocket["server_id"] = to!long(query[6]);
-						if(query.length > 7) pocket["world"] = query[7];
-						if(query.length > 8) pocket["gametype"] = query[8];
-						pocket["ping"] = peek - time;
+						pocket["protocol"] = to!uint(next);
+						pocket["version"] = next;
+						pocket["online"] = to!uint(next);
+						pocket["max"] = to!uint(next);
+						if(query.length) pocket["server_id"] = to!long(next);
+						if(query.length) pocket["world"] = next;
+						if(query.length) pocket["gametype"] = next;
+						pocket["ping"] = timer.peek.msecs;
 						json["pocket"] = pocket;
 					}
 				}
@@ -169,11 +179,6 @@ void main(string[] args) {
 
 	write(toJSON(&j));
 
-}
-
-@property ulong peek() {
-	auto t = Clock.currTime(UTC());
-	return t.toUnixTime!long * 1000 + t.fracSecs.total!"msecs";
 }
 
 uint readVarint(ref ubyte[] buffer) {
