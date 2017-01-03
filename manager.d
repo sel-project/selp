@@ -580,7 +580,7 @@ void main(string[] args) {
 							writeln(v.str);
 						} else {
 							auto value = v.object;
-							writeln(type, " on ", value["ip"].str, ":", value["port"].integer, " (", value["ping"].integer, " ms)");
+							writeln(type, " on ", value["address"].integer, " (", value["ping"].integer, " ms)");
 							writeln("  MOTD: ", value["motd"].str.split("\n")[0].strip.replaceAll(ctRegex!"§[a-fA-F0-9k-or]", ""));
 							writeln("  Players: ", value["online"].integer, "/", value["max"].integer);
 							writeln("  Version: ", value["version"].str, " (protocol ", value["protocol"].integer, ")");
