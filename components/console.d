@@ -30,9 +30,6 @@ import std.stdio : write, writeln, readln;
 import std.string;
 import std.typecons : Tuple;
 
-import sul.constants : SulConstants = Constants;
-import sul.protocol : SulProtocol = Protocol, SoftwareType;
-
 static if(__traits(compiles, import("version.txt"))) {
 	
 	enum __protocol = to!int(strip(import("version.txt")));
@@ -43,9 +40,9 @@ static if(__traits(compiles, import("version.txt"))) {
 	
 }
 
-alias Protocol = SulProtocol!("externalconsole", __protocol, SoftwareType.client);
+mixin("import sul.constants.externalconsole" ~ __protocol.to!string ~ " : Constants;");
 
-alias Constants = SulConstants!("externalconsole", __protocol);
+mixin("import sul.protocol.externalconsole" ~ __protocol.to!string ~ " : Packets;");
 
 void main(string[] args) {
 	
@@ -94,10 +91,10 @@ void main(string[] args) {
 		error("Cannot connect: " ~ lastSocketError);
 	} else if(recv == 0) {
 		error("Connection closed by server");
-	} else if(buffer[0] != Protocol.Login.AuthCredentials.packetId) {
+	} else if(buffer[0] != Packets.Login.AuthCredentials.packetId) {
 		error("Wrong packet received. Maybe the wrong protocol is used?");
 	}
-	auto credentials = Protocol.Login.AuthCredentials().decode(buffer);
+	auto credentials = Packets.Login.AuthCredentials().decode(buffer);
 	if(credentials.protocol != __protocol) {
 		error("Incompaticle protocols: " ~ to!string(credentials.protocol) ~ " is required");
 	} else if(!["", "sha1", "sha224", "sha256", "sha384", "sha512", "md5"].canFind(credentials.hashAlgorithm)) {
@@ -126,7 +123,7 @@ void main(string[] args) {
 					return cast(ubyte[])password.idup;
 			}
 		}();
-		send(Protocol.Login.Auth(hash).encode());
+		send(Packets.Login.Auth(hash).encode());
 		password[] = '*';
 		version(Windows) {
 			//TODO is it even possible?
@@ -143,12 +140,12 @@ void main(string[] args) {
 	if(recv <= 0) {
 		error("Connection error");
 	}
-	if(buffer[0] != Protocol.Login.Welcome.packetId) {
+	if(buffer[0] != Packets.Login.Welcome.packetId) {
 		error("Wrong packet received");
 	}
-	auto welcome = Protocol.Login.Welcome().decode(buffer);
-	if(welcome.status == Protocol.Login.Welcome.Accepted.status) {
-		auto info = Protocol.Login.Welcome.Accepted().decode(buffer);
+	auto welcome = Packets.Login.Welcome().decode(buffer);
+	if(welcome.status == Packets.Login.Welcome.Accepted.status) {
+		auto info = Packets.Login.Welcome.Accepted().decode(buffer);
 		with(info) {
 			nodes = info.connectedNodes;
 			writeln("Connected to ", address);
@@ -158,9 +155,9 @@ void main(string[] args) {
 			if(minecraftProtocols) writeln("Minecraft Protocols: ", minecraftProtocols);
 			writeln("Connected nodes: ", nodes);
 		}
-	} else if(welcome.status == Protocol.Login.Welcome.WrongHash.status) {
+	} else if(welcome.status == Packets.Login.Welcome.WrongHash.status) {
 		error("Wrong password");
-	} else if(welcome.status == Protocol.Login.Welcome.TimedOut.status) {
+	} else if(welcome.status == Packets.Login.Welcome.TimedOut.status) {
 		error("\nTimed out");
 		//TODO a thread isn't killed because is waiting a console input
 	} else {
@@ -173,7 +170,7 @@ void main(string[] args) {
 		uint count = 0;
 		while(true) {
 			Thread.sleep(dur!"seconds"(5));
-			send(Protocol.Status.KeepAlive(count++).encode());
+			send(Packets.Status.KeepAlive(count++).encode());
 			ping_time = peek;
 		}
 	}).start();
@@ -198,7 +195,7 @@ void main(string[] args) {
 						writeln("Connected nodes: ", nodes.join(", "));
 						break;
 					default:
-						send(Protocol.Play.Command(message).encode());
+						send(Packets.Play.Command(message).encode());
 						break;
 				}
 			}
@@ -215,21 +212,21 @@ void main(string[] args) {
 		}
 
 		switch(buffer[0]) {
-			case Protocol.Status.KeepAlive.packetId:
+			case Packets.Status.KeepAlive.packetId:
 				ping = peek - ping_time;
 				break;
-			case Protocol.Play.ConsoleMessage.packetId:
-				auto cm = Protocol.Play.ConsoleMessage().decode(buffer);
+			case Packets.Play.ConsoleMessage.packetId:
+				auto cm = Packets.Play.ConsoleMessage().decode(buffer);
 				writeln("[", cm.node, "][", cm.logger, "] ", cm.message);
 				break;
-			case Protocol.Play.PermissionDenied.packetId:
+			case Packets.Play.PermissionDenied.packetId:
 				writeln("Permission denied");
 				break;
-			case Protocol.Status.UpdateStats.packetId:
+			case Packets.Status.UpdateStats.packetId:
 				//writeln(UpdateStats.staticDecode(buffer));
 				break;
-			case Protocol.Status.UpdateNodes.packetId:
-				auto un = Protocol.Status.UpdateNodes().decode(buffer);
+			case Packets.Status.UpdateNodes.packetId:
+				auto un = Packets.Status.UpdateNodes().decode(buffer);
 				if(un.action == Constants.UpdateNodes.action.add) {
 					nodes ~= un.node;
 				} else {

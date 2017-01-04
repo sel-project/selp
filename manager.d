@@ -38,7 +38,7 @@ import std.zlib : Compress, UnCompress, HeaderFormat;
 
 alias ServerTuple = Tuple!(string, "name", string, "location", string, "type", string[], "flags");
 
-enum __MANAGER__ = "4.2.0";
+enum __MANAGER__ = "4.3.0";
 enum __WEBSITE__ = "http://downloads.selproject.org/";
 enum __COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
 enum __LANG__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/lang/";
@@ -160,8 +160,7 @@ void main(string[] args) {
 					if(server.type == "full") args ~= ["-I..", "-version=OneNode"];
 					if(server.flags.canFind("edu")) args ~= "-version=Edu";
 					if(server.flags.canFind("realm")) args ~= "-version=Realm";
-					args ~= "-I" ~ Settings.config ~ "utils" ~ dirSeparator ~ "d"; // for sel-utils source code
-					args ~= "-J" ~ Settings.config ~ "utils" ~ dirSeparator ~ "json" ~ dirSeparator ~ "min"; // for sel-utils json files
+					args ~= "-I" ~ Settings.config ~ "utils" ~ dirSeparator ~ "src" ~ dirSeparator ~ "d"; // for sel-utils source code
 					if(!exists(exe) || force) {
 						StopWatch timer = StopWatch(AutoStart.yes);
 						string output;
@@ -209,7 +208,7 @@ void main(string[] args) {
 					}
 					writeln("Deleted ", deleted, " files from ", location);
 				}
-				if(args[1] == "*") {
+				if(args[1] == "all") {
 					string tmp = tempDir();
 					if(!tmp.endsWith(dirSeparator)) tmp ~= dirSeparator;
 					del(tmp ~ "sel");
@@ -224,7 +223,7 @@ void main(string[] args) {
 					}
 				}
 			} else {
-				writeln("Use: '", launch, " clear <*|server>'");
+				writeln("Use: '", launch, " clear <all|server>'");
 			}
 			break;
 		case "client":
@@ -885,11 +884,11 @@ string launchComponent(bool spawn=false)(string component, string[] args, ptrdif
 	if(!exists(Settings.config ~ "components" ~ dirSeparator ~ component ~ ext)) {
 		systemDownload(__COMPONENTS__ ~ name ~ ".d", Settings.config ~ "components" ~ dirSeparator ~ component ~ ".d");
 		write(Settings.config ~ "components" ~ dirSeparator ~ "version.txt", to!string(vers));
-		wait(spawnShell("cd " ~ Settings.config ~ "components && rdmd --build-only -J. -I" ~ Settings.config ~ "utils" ~ dirSeparator ~ "d -J" ~ Settings.config ~ "utils" ~ dirSeparator ~ "json" ~ dirSeparator ~ "min " ~ component ~ ".d"));
+		wait(spawnShell("cd " ~ Settings.config ~ "components && rdmd --build-only -J. -I" ~ Settings.config ~ "utils" ~ dirSeparator ~ "src" ~ dirSeparator ~ "d " ~ component ~ ".d"));
 		remove(Settings.config ~ "components" ~ dirSeparator ~ component ~ ".d");
 		remove(Settings.config ~ "components" ~ dirSeparator ~ "version.txt");
 	}
-	immutable cmd = "cd " ~ Settings.config ~ "components && " ~ runnable ~ " " ~ args.join(" ").replace("\"", "\\\"");
+	immutable cmd = "cd " ~ Settings.config ~ "components && " ~ runnable ~ " " ~ args.join(" ");
 	static if(spawn) {
 		wait(spawnShell(cmd));
 		return "";

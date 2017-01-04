@@ -34,10 +34,6 @@ import std.typecons : Tuple;
 import std.uuid : randomUUID;
 import std.zlib;
 
-static import sul.constants;
-static import sul.protocol;
-
-import sul.buffers : RemainingBytes, Triad;
 import sul.types.var;
 
 enum uint __version = to!uint(import("version.txt").strip);
@@ -50,11 +46,9 @@ static if(__game == 1) enum __gamestr = "pocket";
 else static if(__game == 2) enum __gamestr = "minecraft";
 else static assert(0);
 
-alias Protocol = sul.protocol.Protocol!(__gamestr, __protocol, sul.protocol.SoftwareType.client);
+mixin("import sul.constants." ~ __gamestr ~ __protocol.to!string ~ " : Constants;");
 
-alias Types = Protocol.Types;
-
-alias Constants = sul.constants.Constants!(__gamestr, __protocol);
+mixin("import sul.protocol." ~ __gamestr ~ __protocol.to!string ~ " : Types, Packets;");
 
 enum unformatRegex = ctRegex!"§[a-fA-F0-9k-or]";
 
@@ -92,8 +86,8 @@ void main(string[] args) {
 
 	// list packets
 	string[] clientbound, serverbound;
-	foreach(immutable packet ; __traits(allMembers, Protocol.Play)) {
-		mixin("alias T = Protocol.Play." ~ packet ~ ";");
+	foreach(immutable packet ; __traits(allMembers, Packets.Play)) {
+		mixin("alias T = Packets.Play." ~ packet ~ ";");
 		static if(is(typeof(T.encode))) {
 			clientbound ~= packet;
 		}
@@ -110,7 +104,19 @@ void main(string[] args) {
 
 	static if(__gamestr == "pocket") {
 
-		alias Raknet = sul.protocol.Protocol!("raknet", 8, sul.protocol.SoftwareType.client);
+		static import sul.protocol.raknet8;
+
+		static struct Raknet {
+
+			alias Types = sul.protocol.raknet8.Types;
+			
+			alias Status = sul.protocol.raknet8.Packets.Status;
+
+			alias Login = sul.protocol.raknet8.Packets.Login;
+
+			alias Connection = sul.protocol.raknet8.Packets.Connection;
+
+		}
 
 		enum ubyte[] magic = [0, 255, 255, 0, 254, 254, 254, 254, 253, 253, 253, 253, 18, 52, 86, 120];
 
@@ -145,9 +151,9 @@ void main(string[] args) {
 			if(play) {
 				if(payload.length > 128) {
 					Compress compress = new Compress(6, HeaderFormat.deflate);
-					payload = cast(ubyte[])compress.compress(varuint(payload.length.to!uint).encode() ~ payload.dup);
+					payload = cast(ubyte[])compress.compress(varuint.encode(payload.length.to!uint) ~ payload.dup);
 					payload ~= cast(ubyte[])compress.flush();
-					payload = Protocol.Play.Batch(payload.dup).encode();
+					payload = Packets.Play.Batch(payload.dup).encode();
 				}
 				payload = 254 ~ payload;
 			}
@@ -157,8 +163,8 @@ void main(string[] args) {
 				foreach(uint order ; 0..count) {
 					ubyte[] buffer = payload[order*sizes..min((order+1)*sizes, $)];
 					auto split = Raknet.Types.Split(count, splitSend, order);
-					auto encapsulation = Raknet.Types.Encapsulation(16 + 64, cast(ushort)(buffer.length * 8), Triad(sendCount), Triad.init, ubyte.init, split, RemainingBytes(buffer));
-					ubyte[] packet = Raknet.Connection.Encapsulated(Triad(sendCount), encapsulation).encode();
+					auto encapsulation = Raknet.Types.Encapsulation(16 + 64, cast(ushort)(buffer.length * 8), sendCount, 0, ubyte.init, split, buffer);
+					ubyte[] packet = Raknet.Connection.Encapsulated(sendCount, encapsulation).encode();
 					packet[0] = 140;
 					awaitingAcks[sendCount] = packet;
 					send(packet);
@@ -166,7 +172,7 @@ void main(string[] args) {
 				}
 				splitSend++;
 			} else {
-				ubyte[] packet = Raknet.Connection.Encapsulated(Triad(sendCount), Raknet.Types.Encapsulation(64, to!ushort(payload.length << 3), Triad(sendCount), Triad.init, ubyte.init, Raknet.Types.Split.init, RemainingBytes(payload))).encode();
+				ubyte[] packet = Raknet.Connection.Encapsulated(sendCount, Raknet.Types.Encapsulation(64, to!ushort(payload.length << 3), sendCount, 0, ubyte.init, Raknet.Types.Split.init, payload)).encode();
 				awaitingAcks[sendCount] = packet;
 				send(packet);
 				sendCount++;
@@ -202,7 +208,7 @@ void main(string[] args) {
 		}
 
 		// open connection request 1
-		send(Raknet.Login.OpenConnectionRequest1(magic, 8, RemainingBytes(new ubyte[1464])).encode());
+		send(Raknet.Login.OpenConnectionRequest1(magic, 8, new ubyte[1464]).encode());
 
 		// open connection response 1
 		auto ocr1 = Raknet.Login.OpenConnectionReply1().decode(receive());
@@ -222,9 +228,9 @@ void main(string[] args) {
 		void handlePlayImpl(ubyte[] payload) {
 			if(payload.length) {
 				switch(payload[0]) {
-					case Protocol.Play.Batch.packetId:
+					case Packets.Play.Batch.packetId:
 						UnCompress uncompress = new UnCompress();
-						ubyte[] batch = cast(ubyte[])uncompress.uncompress(Protocol.Play.Batch().decode(payload).data);
+						ubyte[] batch = cast(ubyte[])uncompress.uncompress(Packets.Play.Batch().decode(payload).data);
 						batch ~= cast(ubyte[])uncompress.flush();
 						while(batch.length) {
 							size_t length = varuint.fromBuffer(batch);
@@ -232,32 +238,33 @@ void main(string[] args) {
 							batch = batch[length..$];
 						}
 						break;
-					case Protocol.Play.StartGame.packetId:
-						writeln(Protocol.Play.StartGame().decode(payload));
+					case Packets.Play.StartGame.packetId:
+						writeln(payload);
+						writeln(Packets.Play.StartGame().decode(payload));
 						break;
-					case Protocol.Play.PlayStatus.packetId:
-						auto ps = Protocol.Play.PlayStatus().decode(payload);
+					case Packets.Play.PlayStatus.packetId:
+						auto ps = Packets.Play.PlayStatus().decode(payload);
 						if(ps.status == Constants.PlayStatus.status.spawned) {
 
 						}
 						break;
-					case Protocol.Play.MovePlayer.packetId:
-						auto move = Protocol.Play.MovePlayer().decode(payload);
+					case Packets.Play.MovePlayer.packetId:
+						auto move = Packets.Play.MovePlayer().decode(payload);
 						//TODO compare with player's entity id and update last known position
 						break;
-					case Protocol.Play.Text.packetId:
-						auto text = Protocol.Play.Text().decode(payload);
-						if(text.type == Protocol.Play.Text.Raw.type) {
-							auto raw = Protocol.Play.Text.Raw().decode(payload);
+					case Packets.Play.Text.packetId:
+						auto text = Packets.Play.Text().decode(payload);
+						if(text.type == Packets.Play.Text.Raw.type) {
+							auto raw = Packets.Play.Text.Raw().decode(payload);
 							writeln(raw.message.replaceAll(unformatRegex, ""));
 						}
 						break;
-					case Protocol.Play.AddPlayer.packetId:
+					case Packets.Play.AddPlayer.packetId:
 						//TODO create a list of known players
-						//writeln(Protocol.Play.AddPlayer().decode(payload));
+						//writeln(Packets.Play.AddPlayer().decode(payload));
 						break;
-					case Protocol.Play.Disconnect.packetId:
-						auto disconnect = Protocol.Play.Disconnect().decode(payload);
+					case Packets.Play.Disconnect.packetId:
+						auto disconnect = Packets.Play.Disconnect().decode(payload);
 						writeln("Disconnected: ", disconnect.message.replaceAll(unformatRegex, "").strip);
 						exit(0);
 						break;
@@ -275,8 +282,8 @@ void main(string[] args) {
 
 		void handleLogin(ubyte[] payload) {
 			if(payload.length > 2 && payload[0] == 254) {
-				if(payload[1] == Protocol.Play.PlayStatus.packetId) {
-					auto playstaus = Protocol.Play.PlayStatus().decode(payload[1..$]);
+				if(payload[1] == Packets.Play.PlayStatus.packetId) {
+					auto playstaus = Packets.Play.PlayStatus().decode(payload[1..$]);
 					switch(playstaus.status) {
 						case Constants.PlayStatus.status.ok:
 							writeln("Connected to the server");
@@ -293,7 +300,7 @@ void main(string[] args) {
 							break;
 					}
 					exit(0);
-				} else if(payload[1] == Protocol.Play.Disconnect.packetId) {
+				} else if(payload[1] == Packets.Play.Disconnect.packetId) {
 					return handlePlay(payload);
 				}
 			}
@@ -318,7 +325,7 @@ void main(string[] args) {
 			Compress compress = new Compress(7, HeaderFormat.deflate);
 			data = cast(ubyte[])compress.compress(data.dup);
 			data ~= cast(ubyte[])compress.flush();
-			encapsulate(Protocol.Play.Login(__protocol, edu, data).encode(), true);
+			encapsulate(Packets.Play.Login(__protocol, edu, data).encode(), true);
 			handle = &handleLogin;
 
 		}
@@ -343,11 +350,11 @@ void main(string[] args) {
 						auto l = lost.dup;
 						Raknet.Connection.Nack packet;
 						do {
-							auto current = Raknet.Types.Acknowledge(true, Triad(l[0]), Triad(l[0]));
+							auto current = Raknet.Types.Acknowledge(true, l[0], l[0]);
 							l = l[1..$];
 							while(l.length && l[0] == current.last + 1) {
 								current.unique = false;
-								current.last = Triad(l[0]);
+								current.last = l[0];
 								l = l[1..$];
 							}
 							packet.packets ~= current;
@@ -447,7 +454,7 @@ void main(string[] args) {
 		socket.blocking = true;
 
 		void send(ubyte[] data) {
-			socket.send(varuint(data.length.to!uint).encode() ~ data);
+			socket.send(varuint.encode(data.length.to!uint) ~ data);
 		}
 
 		void encapsulate(ubyte[] data) {
@@ -458,7 +465,7 @@ void main(string[] args) {
 				data = cast(ubyte[])compress.compress(data.dup);
 				data ~= cast(ubyte[])compress.flush();
 			}
-			send(varuint(length).encode() ~ data);
+			send(varuint.encode(length) ~ data);
 		}
 
 		size_t next_length;
@@ -501,10 +508,10 @@ void main(string[] args) {
 		}
 
 		// send handshake packet
-		send(Protocol.Status.Handshake(varuint(__protocol), ip, port, varuint(Constants.Handshake.next.login)).encode());
+		send(Packets.Status.Handshake(__protocol, ip, port, Constants.Handshake.next.login).encode());
 
 		// send login start packet
-		send(Protocol.Login.LoginStart(username).encode());
+		send(Packets.Login.LoginStart(username).encode());
 		
 		string unformat(string str) {
 			string ret = "";
@@ -543,18 +550,18 @@ void main(string[] args) {
 			ubyte[] b = next();
 			uint id = varuint.fromBuffer(b);
 			switch(id) {
-				case Protocol.Login.Disconnect.packetId:
-					writeln("Disconnected: ", unformat(Protocol.Login.Disconnect().decode!false(b).reason));
+				case Packets.Login.Disconnect.packetId:
+					writeln("Disconnected: ", unformat(Packets.Login.Disconnect().decode!false(b).reason));
 					goto close;
-				case Protocol.Login.EncryptionRequest.packetId:
+				case Packets.Login.EncryptionRequest.packetId:
 					writeln("Error: you need to authenticate to connect to this server");
 					goto close;
-				case Protocol.Login.SetCompression.packetId:
-					thresold = Protocol.Login.SetCompression().decode!false(b).thresold;
+				case Packets.Login.SetCompression.packetId:
+					thresold = Packets.Login.SetCompression().decode!false(b).thresold;
 					compression = true;
 					break;
-				case Protocol.Login.LoginSuccess.packetId:
-					auto success = Protocol.Login.LoginSuccess().decode!false(b);
+				case Packets.Login.LoginSuccess.packetId:
+					auto success = Packets.Login.LoginSuccess().decode!false(b);
 					writeln("Logged in as ", success.username, " with UUID ", success.uuid);
 					login = false;
 					break;
@@ -576,20 +583,20 @@ void main(string[] args) {
 
 			// packet also handled by client
 			switch(id) {
-				case Protocol.Play.KeepAliveClientbound.packetId:
-					encapsulate(Protocol.Play.KeepAliveServerbound(Protocol.Play.KeepAliveClientbound().decode!false(b).id).encode());
+				case Packets.Play.KeepAliveClientbound.packetId:
+					encapsulate(Packets.Play.KeepAliveServerbound(Packets.Play.KeepAliveClientbound().decode!false(b).id).encode());
 					break;
-				case Protocol.Play.JoinGame.packetId:
+				case Packets.Play.JoinGame.packetId:
 					//TODO call event if exist (spawned)
 					break;
-				case Protocol.Play.ChatMessageClientbound.packetId:
-					auto chat = Protocol.Play.ChatMessageClientbound().decode!false(b);
+				case Packets.Play.ChatMessageClientbound.packetId:
+					auto chat = Packets.Play.ChatMessageClientbound().decode!false(b);
 					if(logs.chat && chat.position != Constants.ChatMessageClientbound.position.aboveHotbar) {
 						writeln(unformat(chat.message));
 					}
 					break;
-				case Protocol.Play.Disconnect.packetId:
-					writeln("Disconnected: ", unformat(Protocol.Play.Disconnect().decode!false(b).reason));
+				case Packets.Play.Disconnect.packetId:
+					writeln("Disconnected: ", unformat(Packets.Play.Disconnect().decode!false(b).reason));
 					goto close;
 				default:
 					break;
