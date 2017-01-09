@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 SEL
+ * Copyright (c) 2016-2017 SEL
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -124,7 +124,7 @@ void main(string[] args) {
 			writeln("  social      perform a social ping to a server (not necessarely a SEL one)");
 			writeln("  start       start an hub server");
 			writeln("  uncompress  uncompress a file archive");
-			writeln("  update      tupdate a server");
+			writeln("  update      update a server");
 			break;
 		case "about":
 			if(args.length > 1) {
