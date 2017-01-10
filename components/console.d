@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 SEL
+ * Copyright (c) 2016-2017 SEL
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -40,9 +40,10 @@ static if(__traits(compiles, import("version.txt"))) {
 	
 }
 
-mixin("import sul.constants.externalconsole" ~ __protocol.to!string ~ " : Constants;");
-
-mixin("import sul.protocol.externalconsole" ~ __protocol.to!string ~ " : Packets;");
+mixin("import Types = sul.protocol.externalconsole" ~ __protocol.to!string ~ ".types;");
+mixin("import Login = sul.protocol.externalconsole" ~ __protocol.to!string ~ ".login;");
+mixin("import Status = sul.protocol.externalconsole" ~ __protocol.to!string ~ ".status;");
+mixin("import Connected = sul.protocol.externalconsole" ~ __protocol.to!string ~ ".connected;");
 
 void main(string[] args) {
 	
@@ -91,10 +92,10 @@ void main(string[] args) {
 		error("Cannot connect: " ~ lastSocketError);
 	} else if(recv == 0) {
 		error("Connection closed by server");
-	} else if(buffer[0] != Packets.Login.AuthCredentials.packetId) {
+	} else if(buffer[0] != Login.AuthCredentials.ID) {
 		error("Wrong packet received. Maybe the wrong protocol is used?");
 	}
-	auto credentials = Packets.Login.AuthCredentials().decode(buffer);
+	auto credentials = Login.AuthCredentials.fromBuffer(buffer);
 	if(credentials.protocol != __protocol) {
 		error("Incompaticle protocols: " ~ to!string(credentials.protocol) ~ " is required");
 	} else if(!["", "sha1", "sha224", "sha256", "sha384", "sha512", "md5"].canFind(credentials.hashAlgorithm)) {
@@ -123,12 +124,10 @@ void main(string[] args) {
 					return cast(ubyte[])password.idup;
 			}
 		}();
-		send(Packets.Login.Auth(hash).encode());
+		send(new Login.Auth(hash).encode());
 		password[] = '*';
-		version(Windows) {
-			//TODO is it even possible?
-		} else {
-			// replaced the password in the console stdout with asteriks
+		version(Posix) {
+			// replaces the password in the console stdout with asteriks
 			wait(spawnShell("tput cuu 1 && tput el"));
 			writeln("Password Required: ", password);
 		}
@@ -140,29 +139,41 @@ void main(string[] args) {
 	if(recv <= 0) {
 		error("Connection error");
 	}
-	if(buffer[0] != Packets.Login.Welcome.packetId) {
+	if(buffer[0] != Login.Welcome.ID) {
 		error("Wrong packet received");
 	}
-	auto welcome = Packets.Login.Welcome().decode(buffer);
-	if(welcome.status == Packets.Login.Welcome.Accepted.status) {
-		auto info = Packets.Login.Welcome.Accepted().decode(buffer);
+	bool cmd;
+	auto welcome = Login.Welcome.fromBuffer(buffer);
+	if(welcome.status == Login.Welcome.Accepted.STATUS) {
+		auto info = welcome.new Accepted();
+		info.decode();
 		with(info) {
 			nodes = info.connectedNodes;
 			writeln("Connected to ", address);
 			writeln("Software: ", software, " v", versions[0], ".", versions[1], ".", versions[2]);
-			writeln("Remote commands: ", remoteCommands);
-			if(pocketProtocols) writeln("Pocket protocols: ", pocketProtocols);
-			if(minecraftProtocols) writeln("Minecraft Protocols: ", minecraftProtocols);
-			writeln("Connected nodes: ", nodes);
+			writeln("Remote commands: ", (cmd = remoteCommands));
+			foreach(game ; games) {
+				string name = (){
+					switch(game.type) {
+						case Types.Game.POCKET: return "Pocket";
+						case Types.Game.MINECRAFT: return "Minecraft";
+						default: return "Unknown";
+					}
+				}();
+				writeln(name, " protocols: ", game.protocols);
+			}
+			writeln("Connected nodes: ", nodes.join(", "));
 		}
-	} else if(welcome.status == Packets.Login.Welcome.WrongHash.status) {
+	} else if(welcome.status == Login.Welcome.WrongHash.STATUS) {
 		error("Wrong password");
-	} else if(welcome.status == Packets.Login.Welcome.TimedOut.status) {
+	} else if(welcome.status == Login.Welcome.TimedOut.STATUS) {
 		error("\nTimed out");
 		//TODO a thread isn't killed because is waiting a console input
 	} else {
 		error("Unknown error");
 	}
+
+	immutable remoteCommands = cmd;
 
 	ulong ping, ping_time;
 
@@ -170,7 +181,7 @@ void main(string[] args) {
 		uint count = 0;
 		while(true) {
 			Thread.sleep(dur!"seconds"(5));
-			send(Packets.Status.KeepAlive(count++).encode());
+			send(new Status.KeepAlive(count++).encode());
 			ping_time = peek;
 		}
 	}).start();
@@ -195,7 +206,11 @@ void main(string[] args) {
 						writeln("Connected nodes: ", nodes.join(", "));
 						break;
 					default:
-						send(Packets.Play.Command(message).encode());
+						if(remoteCommands) {
+							send(new Connected.Command(message).encode());
+						} else {
+							writeln("The server doesn't allow remote commands");
+						}
 						break;
 				}
 			}
@@ -212,25 +227,28 @@ void main(string[] args) {
 		}
 
 		switch(buffer[0]) {
-			case Packets.Status.KeepAlive.packetId:
+			case Status.KeepAlive.ID:
 				ping = peek - ping_time;
 				break;
-			case Packets.Play.ConsoleMessage.packetId:
-				auto cm = Packets.Play.ConsoleMessage().decode(buffer);
+			case Connected.ConsoleMessage.ID:
+				auto cm = Connected.ConsoleMessage.fromBuffer(buffer);
 				writeln("[", cm.node, "][", cm.logger, "] ", cm.message);
 				break;
-			case Packets.Play.PermissionDenied.packetId:
+			case Connected.PermissionDenied.ID:
 				writeln("Permission denied");
 				break;
-			case Packets.Status.UpdateStats.packetId:
+			case Status.UpdateStats.ID:
 				//writeln(UpdateStats.staticDecode(buffer));
 				break;
-			case Packets.Status.UpdateNodes.packetId:
-				auto un = Packets.Status.UpdateNodes().decode(buffer);
-				if(un.action == Constants.UpdateNodes.action.add) {
-					nodes ~= un.node;
-				} else {
-					remove(nodes, un.node);
+			case Status.UpdateNodes.ID:
+				auto un = Status.UpdateNodes.fromBuffer(buffer);
+				final switch(un.action) {
+					case Status.UpdateNodes.ADD:
+						nodes ~= un.node;
+						break;
+					case Status.UpdateNodes.REMOVE:
+						remove(nodes, un.node);
+						break;
 				}
 				break;
 			default:
