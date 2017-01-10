@@ -38,7 +38,7 @@ import std.zlib : Compress, UnCompress, HeaderFormat;
 
 alias ServerTuple = Tuple!(string, "name", string, "location", string, "type", string[], "flags");
 
-enum __MANAGER__ = "4.3.0";
+enum __MANAGER__ = "4.3.1";
 enum __WEBSITE__ = "http://downloads.selproject.org/";
 enum __COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
 enum __LANG__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/lang/";
@@ -50,7 +50,7 @@ version(Windows) {
 	enum __EXECUTABLE__ = "main";
 }
 
-enum commands = ["about", "build", "clear", "client", "connect", "console", "convert", "delete", "init", "latest", "list", "locate", "open", "ping", "query", "rcon", "social", "start", "update"];
+enum commands = ["about", "build", "clear", "client", "connect", "console", "convert", "delete", "init", "latest", "list", "locate", "open", "ping", "query", "rcon", "scan", "social", "start", "update"];
 
 enum noname = [".", "*", "all", "sel", "this", "manager", "lib", "libs", "util", "utils"];
 
@@ -118,6 +118,7 @@ void main(string[] args) {
 			writeln("  ping        ping a server (not necessarily a sel one)");
 			writeln("  query       query a server (not necessarily a sel one)");
 			writeln("  rcon        connect to a server through the rcon protocol");
+			writeln("  scan        search for Minecraft or Minecraft: Pocket Edition server on an address");
 			version(linux) {
 				writeln("  shortcut    create a shortcut for a server (requires root permissions)");
 			}
@@ -579,7 +580,7 @@ void main(string[] args) {
 							writeln(v.str);
 						} else {
 							auto value = v.object;
-							writeln(type, " on ", value["address"].integer, " (", value["ping"].integer, " ms)");
+							writeln(type, " on ", value["ip"].str, ":", value["port"].integer, " (", value["ping"].integer, " ms)");
 							writeln("  MOTD: ", value["motd"].str.split("\n")[0].strip.replaceAll(ctRegex!"§[a-fA-F0-9k-or]", ""));
 							writeln("  Players: ", value["online"].integer, "/", value["max"].integer);
 							writeln("  Version: ", value["version"].str, " (protocol ", value["protocol"].integer, ")");
@@ -640,6 +641,45 @@ void main(string[] args) {
 				launchComponent!true("rcon", args[1..$]);
 			} else {
 				writeln("Use '", launch, " rcon <ip>[:<port>] <password>'");
+			}
+			break;
+		case "scan":
+			if(args.length >= 2) {
+				string ip = args[1];
+				string[] range = (args.length >= 2 ? args[2] : "0..65535").split("..");
+				string a = args.length >= 3 ? args[3..$].join(" ") : "";
+				if(range.length == 2) {
+					try {
+						int[][8] ports;
+						size_t ptr = 0;
+						foreach(port ; to!ushort(range[0])..to!ushort(range[1])+1) {
+							ports[ptr] ~= port;
+							++ptr %= ports.length; 
+						}
+						shared JSONValue[] results;
+						Thread[] threads;
+						void startThread(int[] pool) {
+							auto thread = new Thread({
+								foreach(port ; pool) {
+									writeln("Scanning for server on ", ip, ":", port);
+									auto res = parseJSON(executeShell(launch ~ " ping " ~ ip ~ ":" ~ to!string(port) ~ " -json " ~ a).output);
+									if(res.object.length && "error" !in res) results ~= cast(shared)res;
+								}
+							});
+							thread.start();
+							threads ~= thread;
+						}
+						foreach(pool ; ports) {
+							startThread(pool);
+						}
+						foreach(thread ; threads) thread.join();
+						writeln(cast()results);
+						break;
+					} catch(ConvException) {}
+				}
+				writeln("'", range, "' is not a valid range");
+			} else {
+				writeln("Use '", launch, " scan <ip> [<range>=0..65535] [<options>]'");
 			}
 			break;
 		version(linux) {
@@ -752,12 +792,10 @@ void main(string[] args) {
 					case "libs":
 					case "util":
 					case "utils":
-						// download and update libraries and utils
+						// download or update sel-utils
 						systemDownload(__UTILS__, Settings.config ~ "utils.sa");
 						wait(spawnShell("cd " ~ Settings.config ~ " && " ~  launch ~ " uncompress utils.sa utils"));
 						remove(Settings.config ~ "utils.sa");
-						// create minified files
-						wait(spawnShell("cd " ~ Settings.config ~ "utils" ~ dirSeparator ~ "json && rdmd minify.d"));
 						break;
 					default:
 						// update server
@@ -779,7 +817,7 @@ void main(string[] args) {
 
 void printusage() {
 	writeln("SEL Manager v", __MANAGER__);
-	writeln("Copyright (c) 2016 SEL");
+	writeln("Copyright (c) 2016-2017 SEL");
 	writeln();
 	writeln("Website: http://selproject.org");
 	writeln("Files: " ~ __WEBSITE__);
@@ -792,7 +830,6 @@ void printusage() {
 	writeln("  sel <command> <server> [<options>]");
 	writeln("  sel <server> <command> [<options>]");
 	writeln("  sel <command> [<options>]");
-	//writeln("  sel help <command>");
 	writeln();
 	writeln("Commands:");
 }
@@ -831,7 +868,7 @@ void printusage() {
 
 void saveServerTuples(ServerTuple[] servers) {
 	mkdirRecurse(Settings.config);
-	string file = "# SEL MANAGER CONFIGURATION FILE" ~ newline;
+	string file = "### SEL MANAGER CONFIGURATION FILE" ~ newline;
 	foreach(ServerTuple server ; servers) {
 		file ~= Base64.encode(cast(ubyte[])server[0]) ~ "," ~ server[1] ~ "," ~ server[2] ~ "," ~ server[3].join("|") ~ newline;
 	}
