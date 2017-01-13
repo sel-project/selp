@@ -54,6 +54,11 @@ enum commands = ["about", "build", "clear", "client", "connect", "console", "con
 
 enum noname = [".", "*", "all", "sel", "this", "manager", "lib", "libs", "util", "utils"];
 
+version(linux) enum __shortcut = true;
+else version(OSX) enum __shortcut = true;
+else version(FreeBSD) enum __shortcut = true;
+else enum __shortcut = false;
+
 struct Settings {
 	
 	@disable this();
@@ -119,7 +124,7 @@ void main(string[] args) {
 			writeln("  query       query a server (not necessarily a sel one)");
 			writeln("  rcon        connect to a server through the rcon protocol");
 			writeln("  scan        search for Minecraft or Minecraft: Pocket Edition server on an address");
-			version(linux) {
+			static if(__shortcut) {
 				writeln("  shortcut    create a shortcut for a server (requires root permissions)");
 			}
 			writeln("  social      perform a social ping to a server (not necessarely a SEL one)");
@@ -183,7 +188,7 @@ void main(string[] args) {
 							wait(spawnShell("cd " ~ location ~ " && rdmd --build-only " ~ args.join(" ") ~ " -J" ~ server.location ~ "resources main.d"));
 						}
 						timer.stop();
-						writeln("Done. Compilation took ", timer.peek.seconds, " seconds.");
+						writeln("Done. Compilation took ", timer.peek.msecs.to!float / 1000, " seconds.");
 						//TODO write deprecations and errors
 					}
 				} else {
@@ -682,7 +687,7 @@ void main(string[] args) {
 				writeln("Use '", launch, " scan <ip> [<range>=0..65535] [<options>]'");
 			}
 			break;
-		version(linux) {
+		static if(__shortcut) {
 			case "shortcut":
 			if(args.length > 1) {
 				auto server = getServerByName(args[1].toLower);
@@ -777,15 +782,6 @@ void main(string[] args) {
 						wait(spawnShell(launch ~ " update libs"));
 						foreach(ServerTuple server ; serverTuples) {
 							wait(spawnShell(launch ~ " update " ~ server.name));
-						}
-						break;
-					case "sel":
-					case "this":
-					case "manager":
-						// update manager
-						// delete components
-						foreach(string component ; dirEntries(Settings.config ~ "components", SpanMode.breadth)) {
-							if(component.isFile) remove(component);
 						}
 						break;
 					case "lib":
