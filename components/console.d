@@ -24,7 +24,7 @@ import std.conv : to, ConvException;
 import std.datetime : Clock, UTC;
 import std.digest.md;
 import std.digest.sha;
-import std.process : wait, spawnShell;
+import std.process : wait, spawnShell, executeShell;
 import std.socket;
 import std.stdio : write, writeln, readln;
 import std.string;
@@ -98,7 +98,7 @@ void main(string[] args) {
 	auto credentials = Login.AuthCredentials.fromBuffer(buffer);
 	if(credentials.protocol != __protocol) {
 		error("Incompaticle protocols: " ~ to!string(credentials.protocol) ~ " is required");
-	} else if(!["", "sha1", "sha224", "sha256", "sha384", "sha512", "md5"].canFind(credentials.hashAlgorithm)) {
+	} else if(!credentials.hash && !["sha1", "sha224", "sha256", "sha384", "sha512", "md5"].canFind(credentials.hashAlgorithm)) {
 		error("The server requires an unknown hash algorithm: " ~ credentials.hashAlgorithm);
 	}
 
@@ -151,6 +151,7 @@ void main(string[] args) {
 			nodes = info.connectedNodes;
 			writeln("Connected to ", address);
 			writeln("Software: ", software, " v", versions[0], ".", versions[1], ".", versions[2]);
+			writeln("Name: ", displayName);
 			writeln("Remote commands: ", (cmd = remoteCommands));
 			foreach(game ; games) {
 				string name = (){
@@ -163,6 +164,9 @@ void main(string[] args) {
 				writeln(name, " protocols: ", game.protocols);
 			}
 			writeln("Connected nodes: ", nodes.join(", "));
+			version(Windows) {
+				executeShell("title " ~ displayName.replace("|", "^|") ~ " ^| External Console");
+			}
 		}
 	} else if(welcome.status == Login.Welcome.WrongHash.STATUS) {
 		error("Wrong password");
