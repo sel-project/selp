@@ -106,6 +106,12 @@ void main(string[] args) {
 		write("Password required: ");
 		char[] password = readln().strip.dup;
 		ubyte[] payload = cast(ubyte[])password.idup ~ credentials.payload;
+		password[] = '*';
+		version(Posix) {
+			// replaces the password in the console stdout with asteriks
+			wait(spawnShell("tput cuu 1 && tput el"));
+			writeln("Password Required: ", password);
+		}
 		ubyte[] hash = (){
 			switch(credentials.hashAlgorithm) {
 				case "sha1":
@@ -125,12 +131,6 @@ void main(string[] args) {
 			}
 		}();
 		send(new Login.Auth(hash).encode());
-		password[] = '*';
-		version(Posix) {
-			// replaces the password in the console stdout with asteriks
-			wait(spawnShell("tput cuu 1 && tput el"));
-			writeln("Password Required: ", password);
-		}
 	}).start();
 
 	string[] nodes;
