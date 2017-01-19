@@ -169,20 +169,29 @@ void main(string[] args) {
 							immutable src = server.location ~ server.config.sel.replace("/", dirSeparator) ~ dirSeparator ~ (server.type == "full" ? "node" ~ dirSeparator : "");
 							string[] nargs = args.dup;
 							wait(spawnShell("cd " ~ src ~ " && rdmd --build-only " ~ nargs.join(" ") ~ " init.d"));
-							if(server.config.sel.length) write(server.location ~ "init" ~ __EXE__, read(src ~ "init" ~ __EXE__));
+							if(server.config.sel.length || server.type == "full") {
+								write(server.location ~ "init" ~ __EXE__, read(src ~ "init" ~ __EXE__));
+								version(Posix) executeShell("cd " ~ server.location ~ " && chmod u+x init");
+							}
 							wait(spawnShell("cd " ~ server.location ~ " && ." ~ dirSeparator ~ "init"));
 							remove(server.location ~ "init" ~ __EXE__);
 							if(server.config.sel.length) remove(src ~ "init" ~ __EXE__);
 							if(exists(server.location ~ dirSeparator ~ ".hidden" ~ dirSeparator ~ "plugintemp")) nargs ~= "-I" ~ tempDir() ~ dirSeparator ~ "sel" ~ dirSeparator ~ cast(string)read(server.location ~ dirSeparator ~ ".hidden" ~ dirSeparator ~ "plugintemp"); // for compressed plugins (managed by init.d)
 							wait(spawnShell("cd " ~ src ~ " && rdmd --build-only " ~ nargs.join(" ") ~ " main.d"));
-							write(server.location ~ "node" ~ __EXE__, read(src ~ "main" ~ __EXE__));
-							remove(src ~ "main" ~ __EXE__);
+							if(server.config.sel.length || server.type == "full" || server.name != "main") {
+								write(server.location ~ "node" ~ __EXE__, read(src ~ "main" ~ __EXE__));
+								remove(src ~ "main" ~ __EXE__);
+								version(Posix) executeShell("cd " ~ server.location ~ " && chmod u+x node");
+							}
 						}
 						if(server.type == "hub" || server.type == "full") {
 							immutable src = server.location ~ server.config.sel.replace("/", dirSeparator) ~ dirSeparator ~ (server.type == "full" ? "hub" ~ dirSeparator : "");
 							wait(spawnShell("cd " ~ src ~ " && rdmd --build-only " ~ args.join(" ") ~ " main.d"));
-							write(server.location ~ "hub" ~ __EXE__, read(src ~ "main" ~ __EXE__));
-							remove(src ~ "main" ~ __EXE__);
+							if(server.config.sel.length || server.type == "full" || server.name != "hub") {
+								write(server.location ~ "hub" ~ __EXE__, read(src ~ "main" ~ __EXE__));
+								remove(src ~ "main" ~ __EXE__);
+								version(Posix) executeShell("cd " ~ server.location ~ " && chmod u+x hub");
+							}
 						}
 						timer.stop();
 						writeln("Done. Compilation took ", timer.peek.msecs.to!float / 1000, " seconds.");
