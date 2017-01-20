@@ -355,7 +355,7 @@ void main(string[] args) {
 						compress = new Compress(level, format);
 						ubyte[] pack = cast(ubyte[])compress.compress(toJSON(&json));
 						pack ~= cast(ubyte[])compress.flush();
-						data = cast(ubyte[])"plugn" ~ nativeToBigEndian(packet.length.to!uint) ~ pack ~ data;
+						data = cast(ubyte[])"plugn" ~ nativeToBigEndian(pack.length.to!uint) ~ pack ~ data;
 					} catch(JSONException e) {
 						writeln("Error whilst readin package.json: ", e.msg);
 						break;
