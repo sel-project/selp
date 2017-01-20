@@ -21,7 +21,7 @@ import etc.c.curl : CurlOption;
 import std.algorithm : min, canFind;
 import std.ascii : newline;
 import std.base64 : Base64;
-static import std.bitmanip;
+import std.bitmanip : nativeToBigEndian;
 import std.conv : to, ConvException;
 import std.datetime : dur, StopWatch, AutoStart;
 import std.file;
@@ -355,8 +355,7 @@ void main(string[] args) {
 						compress = new Compress(level, format);
 						ubyte[] pack = cast(ubyte[])compress.compress(toJSON(&json));
 						pack ~= cast(ubyte[])compress.flush();
-						data = cast(ubyte[])"plugn" ~ new ubyte[4] ~ pack ~ data;
-						std.bitmanip.write(data, pack.length.to!uint, 0);
+						data = cast(ubyte[])"plugn" ~ nativeToBigEndian(packet.length.to!uint) ~ pack ~ data;
 					} catch(JSONException e) {
 						writeln("Error whilst readin package.json: ", e.msg);
 						break;
