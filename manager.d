@@ -162,7 +162,7 @@ void main(string[] args) {
 					writeln("There's no server named \"", args[1].toLower, "\"");
 				}
 			} else {
-				writeln("Use: '", launch, " about <server-name>'");
+				writeln("Use: '", launch, " about <server>'");
 			}
 			break;
 		case "build":
@@ -213,7 +213,7 @@ void main(string[] args) {
 					writeln("There's no server named \"", args[1].toLower, "\"");
 				}
 			} else {
-				writeln("Use: '", launch, " build <server> [<options>]'");
+				writeln("Use: '", launch, " build <server> [compiler-options]'");
 			}
 			break;
 		case "clear":
@@ -247,7 +247,7 @@ void main(string[] args) {
 					}
 				}
 			} else {
-				writeln("Use: '", launch, " clear <all|server>'");
+				writeln("Use: '", launch, " clear <server>'");
 			}
 			break;
 		case "client":
@@ -291,7 +291,7 @@ void main(string[] args) {
 				}
 			} else {
 				// client.exe ip:port username password
-				writeln("Use '", launch, " client <game> <ip>[:<port>] [<options>]'");
+				writeln("Use '", launch, " client <game> <ip>[:port] [-protocol=latest] [-username=random]'");
 			}
 			break;
 		case "compress":
@@ -300,8 +300,8 @@ void main(string[] args) {
 				int level = 6;
 				HeaderFormat format = HeaderFormat.gzip;
 				foreach(arg ; args[3..$]) {
-					if(arg == "-deflate") format = HeaderFormat.deflate;
-					else if(arg == "-gzip") format = HeaderFormat.gzip;
+					if(arg == "-alg=deflate") format = HeaderFormat.deflate;
+					else if(arg == "-alg=gzip") format = HeaderFormat.gzip;
 					else if(arg.startsWith("-level=")) level = to!int(arg[7..$]);
 					else if(arg == "-plugin") plugin = true;
 				}
@@ -376,7 +376,7 @@ void main(string[] args) {
 				write(output, data);
 				writeln("Saved at ", output);
 			} else {
-				writeln("Use '", launch, " compress <source> <destination> [<options>]'");
+				writeln("Use '", launch, " compress <source> <destination> [-level=6] [-alg=gzip] [-plugin]'");
 			}
 			break;
 		case "connect":
@@ -415,7 +415,7 @@ void main(string[] args) {
 					writeln("There's no server name \"", args[1].toLower, "\"");
 				}
 			} else {
-				writeln("Use: '", launch, " connect <server> [<options>]'");
+				writeln("Use: '", launch, " connect <server> [-name=<server>] [-password=] [-ip=localhost] [-port=28232] [-main=true] [-loop]'");
 			}
 			break;
 		case "console":
@@ -428,7 +428,7 @@ void main(string[] args) {
 				}
 				launchComponent!true("console", [args[1]], vers);
 			} else {
-				writeln("Use '", launch, " console <ip>[:<port>] <password> [<send-commands>=false]'");
+				writeln("Use '", launch, " console <ip>[:port]'");
 			}
 			break;
 		case "convert":
@@ -437,7 +437,7 @@ void main(string[] args) {
 				string fto = args[2].toLower;
 				launchComponent!true("convert", [ffrom, fto, args[3], args[4]]);
 			} else {
-				writeln("Use '", launch, " convert <format-from> <format-to> <location-from> [<location-to>=.]'");
+				writeln("Use '", launch, " convert <format-from> <format-to> <location-from> [location-to=.]'");
 			}
 			break;
 		case "delete":
@@ -462,7 +462,7 @@ void main(string[] args) {
 					writeln("There's no server named \"", args[1].toLower, "\"");
 				}
 			} else {
-				writeln("Use: '", launch, " delete <server> [<delete-files>=true]");
+				writeln("Use: '", launch, " delete <server> [delete-files=true]");
 			}
 			break;
 		case "init":
@@ -515,7 +515,7 @@ void main(string[] args) {
 					writeln("A server named \"", name, "\" already exists");
 				}
 			} else {
-				writeln("Use '", launch, " init <server> [<hub|node|full>] [<options>]'");
+				writeln("Use '", launch, " init <server> <hub|node|full> [-version=latest] [-path=] [-edu] [-realm]'");
 			}
 			break;
 		case "latest":
@@ -557,7 +557,7 @@ void main(string[] args) {
 			break;
 		case "ping":
 			if(args.length > 1) {
-				string str = launchComponent("ping", args[1..$]);
+				string str = launchComponent("ping", args[1..$]).strip;
 				if(args.canFind("-json")) {
 					writeln(str);
 				} else {
@@ -568,7 +568,7 @@ void main(string[] args) {
 						} else {
 							auto value = v.object;
 							writeln(type, " on ", value["ip"].str, ":", value["port"].integer, " (", value["ping"].integer, " ms)");
-							writeln("  MOTD: ", value["motd"].str.split("\n")[0].strip.replaceAll(ctRegex!"§[a-fA-F0-9k-or]", ""));
+							writeln("  MOTD: ", value["motd"].str.split("\n")[0].replaceAll(ctRegex!"§[a-fA-F0-9k-or]", "").strip);
 							writeln("  Players: ", value["online"].integer, "/", value["max"].integer);
 							writeln("  Version: ", value["version"].str, " (protocol ", value["protocol"].integer, ")");
 						}
@@ -581,12 +581,12 @@ void main(string[] args) {
 					}
 				}
 			} else {
-				writeln("Use '", launch, " ping <ip>[:<port>] [<options>]'");
+				writeln("Use '", launch, " ping <ip>[:port] [options] [-json] [-raw]'");
 			}
 			break;
 		case "query":
 			if(args.length > 1) {
-				string str = launchComponent("query", args[1..$]);
+				string str = launchComponent("query", args[1..$]).strip;
 				if(args.canFind("-json")) {
 					writeln(str);
 				} else {
@@ -597,7 +597,7 @@ void main(string[] args) {
 					} else {
 						void printquery(string type, JSONValue[string] value) {
 							writeln(type, " on ", value["address"].str, " (", value["ping"].integer, " ms)");
-							writeln("  MOTD: ", value["motd"].str.strip.replaceAll(ctRegex!"§[a-fA-F0-9k-or]", ""));
+							writeln("  MOTD: ", value["motd"].str.replaceAll(ctRegex!"§[a-fA-F0-9k-or]", "").strip);
 							writeln("  Players: ", value["online"].integer, "/", value["max"].integer);
 							auto players = value["players"].array;
 							if(players.length > 0 && players.length < 32) {
@@ -620,53 +620,49 @@ void main(string[] args) {
 					}
 				}
 			} else {
-				writeln("Use '", launch, " query <ip>[:<port>]'");
+				writeln("Use '", launch, " query <ip>[:port] [-json]'");
 			}
 			break;
 		case "rcon":
 			if(args.length >= 3) {
 				launchComponent!true("rcon", args[1..$]);
 			} else {
-				writeln("Use '", launch, " rcon <ip>[:<port>] <password>'");
+				writeln("Use '", launch, " rcon <ip>[:port] <password>'");
 			}
 			break;
 		case "scan":
 			if(args.length >= 2) {
 				string ip = args[1];
-				string[] range = (args.length >= 2 ? args[2] : "0..65535").split("..");
-				string a = args.length >= 3 ? args[3..$].join(" ") : "";
-				if(range.length == 2) {
-					try {
-						int[][8] ports;
-						size_t ptr = 0;
-						foreach(port ; to!ushort(range[0])..to!ushort(range[1])+1) {
-							ports[ptr] ~= port;
-							++ptr %= ports.length; 
-						}
-						shared JSONValue[] results;
-						Thread[] threads;
-						void startThread(int[] pool) {
-							auto thread = new Thread({
-								foreach(port ; pool) {
-									writeln("Scanning for server on ", ip, ":", port);
-									auto res = parseJSON(executeShell(launch ~ " ping " ~ ip ~ ":" ~ to!string(port) ~ " -json " ~ a).output);
-									if(res.object.length && "error" !in res) results ~= cast(shared)res;
+				string str = launchComponent("scan", args[1..$]).strip;
+				if(args.canFind("-json")) {
+					writeln(str);
+				} else {
+					auto json = parseJSON(str);
+					auto error = "error" in json;
+					if(error) {
+						writeln("Error: ", error.str);
+					} else {
+						void print(string game, const JSONValue[] array) {
+							writeln(game, ":");
+							if(array.length) {
+								foreach(value ; array) {
+									writeln("  ", value["port"].integer, ":");
+									writeln("    MOTD: ", value["motd"].str.replaceAll(ctRegex!"§[a-fA-F0-9k-or]", "").strip);
+									writeln("    Players: ", value["online"], "/", value["max"]);
+									writeln("    Version: ", value["version"].str, " (protocol ", value["protocol"], ")");
 								}
-							});
-							thread.start();
-							threads ~= thread;
+							} else {
+								writeln("No server found");
+							}
 						}
-						foreach(pool ; ports) {
-							startThread(pool);
-						}
-						foreach(thread ; threads) thread.join();
-						writeln(cast()results);
-						break;
-					} catch(ConvException) {}
+						auto minecraft = "minecraft" in json;
+						auto pocket = "pocket" in json;
+						if(minecraft) print("Minecraft", minecraft.array);
+						if(pocket) print("Minecraft: Pocket Edition", pocket.array);
+					}
 				}
-				writeln("'", range, "' is not a valid range");
 			} else {
-				writeln("Use '", launch, " scan <ip> [<range>=0..65535] [<options>]'");
+				writeln("Use '", launch, " scan <ip> [-minecraft] [-pocket] [-from=1] [-to=65535]'");
 			}
 			break;
 		static if(__shortcut) {
@@ -678,12 +674,12 @@ void main(string[] args) {
 					wait(spawnShell("cd " ~ server.location ~ " && rdmd --build-only -release script.d"));
 					remove(server.location ~ "script.d");
 					wait(spawnShell("sudo mv " ~ server.location ~ "script /usr/bin/" ~ server.name));
-					writeln("You can now use '", server.name, " <command> <options>' as a shortcut for '", launch, " <command> ", server.name, " <options>'");
+					writeln("You can now use '", server.name, " <command> [options]' as a shortcut for '", launch, " <command> ", server.name, " [options]'");
 				} else {
 					writeln("There's no server named \"", args[1].toLower, "\"");
 				}
 			} else {
-				writeln("Use: '", launch, " shortcut <server-name>");
+				writeln("Use: '", launch, " shortcut <server>");
 			}
 			break;
 		}
@@ -692,7 +688,7 @@ void main(string[] args) {
 				string str = launchComponent("social", args[1..$]);
 				writeln(str);
 			} else {
-				writeln("Use: '", launch, " social <ip>[:<port>]'");
+				writeln("Use: '", launch, " social <ip>[:port]'");
 			}
 			break;
 		case "start":
@@ -724,7 +720,7 @@ void main(string[] args) {
 					writeln("There's no server named \"", args[1].toLower, "\"");
 				}
 			} else {
-				writeln("Use: '", launch, " start <server> [<options>]'");
+				writeln("Use: '", launch, " start <server> [-loop]'");
 			}
 			break;
 		case "uncompress":
@@ -792,7 +788,7 @@ void main(string[] args) {
 						break;
 				}
 			} else {
-				writeln("Use: '", launch, " update sel|utils|<server-name>|* [<version>=latest]'");
+				writeln("Use: '", launch, " update utils|<server> [-version=latest]'");
 			}
 			break;
 		case "website":
