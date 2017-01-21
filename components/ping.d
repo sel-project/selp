@@ -26,8 +26,6 @@ enum magic = cast(ubyte[])[0x00, 0xFF, 0xFF, 0x00, 0xFE, 0xFE, 0xFE, 0xFE, 0xFD,
 
 void main(string[] args) {
 
-	shared string[] ret;
-
 	bool has_port = args[1].lastIndexOf(":") > args[1].lastIndexOf("]");
 	string ip = args[1].replace("[", "").replace("]", "");
 	ushort port = 0;

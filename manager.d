@@ -40,7 +40,7 @@ alias Config = Tuple!(string, "sel", string, "common", string[], "versions", str
 
 alias ServerTuple = Tuple!(string, "name", string, "location", string, "type", Config, "config");
 
-enum __MANAGER__ = "4.4.0";
+enum __MANAGER__ = "4.5.0";
 enum __WEBSITE__ = "http://downloads.selproject.org/";
 enum __COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
 enum __LANG__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/lang/";
@@ -110,31 +110,43 @@ void main(string[] args) {
 	switch(args[0]) {
 		case "help":
 			printusage();
+			writeln("Commands for SEL servers:");
+			writeln();
+			writeln("  sel <command> <server> [options]");
+			writeln();
 			writeln("  about       print informations about a server");
 			writeln("  build       build a server");
 			writeln("  clear       clear a server's cache");
-			writeln("  client      simulate a Minecraft or Minecraft: Pocket Edition client");
-			writeln("  compress    compress a folder into a sel archive");
 			writeln("  connect     start a node server and connect it to an hub");
-			writeln("  console     connect to a server throught the external console protocol");
-			writeln("  convert     convert a world to another format");
-			writeln("  delete      delete a server");
+			writeln("  delete      delete a server and its files");
 			writeln("  init        create a new server");
-			writeln("  latest      print the latest stable version of SEL");
-			writeln("  list        list every registered server");
+			writeln("  list        list every managed server");
 			writeln("  locate      print the location of a server");
 			writeln("  open        open the file explorer on a server's location");
-			writeln("  ping        ping a server (not necessarily a sel one)");
-			writeln("  query       query a server (not necessarily a sel one)");
-			writeln("  rcon        connect to a server through the rcon protocol");
-			writeln("  scan        search for Minecraft or Minecraft: Pocket Edition servers on an address");
 			static if(__shortcut) {
-				writeln("  shortcut    create a shortcut for a server (requires root permissions)");
+				writeln("  shortcut    create a shortcut for a server (root permissions required)");
 			}
-			writeln("  social      perform a social ping to a server (not necessarely a SEL one)");
 			writeln("  start       start an hub server");
-			writeln("  uncompress  uncompress a file archive");
 			writeln("  update      update a server");
+			writeln();
+			writeln("Commands for generic Minecraft and Minecraft: Pocket Edition servers:");
+			writeln();
+			writeln("  sel <command> <ip>[:port] [options]");
+			writeln();
+			writeln("  client      simulate a game client");
+			writeln("  console     connect to a server throught the external console protocol");
+			writeln("  ping        ping a server");
+			writeln("  query       query a server (if the server has it enabled)");
+			writeln("  rcon        connect to a server through the rcon protocol");
+			writeln("  scan        search for servers on an address in the given port range");
+			writeln("  social      perform a social ping to a server");
+			writeln();
+			writeln("Utility commands:");
+			writeln();
+			writeln("  compress    compress a folder into a sel archive");
+			writeln("  convert     convert a world to another format");
+			writeln("  latest      print the latest stable version of SEL");
+			writeln("  uncompress  uncompress a file archive");
 			break;
 		case "about":
 			if(args.length > 1) {
@@ -176,7 +188,7 @@ void main(string[] args) {
 							wait(spawnShell("cd " ~ server.location ~ " && ." ~ dirSeparator ~ "init"));
 							remove(server.location ~ "init" ~ __EXE__);
 							if(server.config.sel.length) remove(src ~ "init" ~ __EXE__);
-							if(exists(server.location ~ dirSeparator ~ ".hidden" ~ dirSeparator ~ "plugintemp")) nargs ~= "-I" ~ tempDir() ~ dirSeparator ~ "sel" ~ dirSeparator ~ cast(string)read(server.location ~ dirSeparator ~ ".hidden" ~ dirSeparator ~ "plugintemp"); // for compressed plugins (managed by init.d)
+							if(exists(server.location ~ dirSeparator ~ ".hidden" ~ dirSeparator ~ "temp")) nargs ~= "-I" ~ tempDir() ~ dirSeparator ~ "sel" ~ dirSeparator ~ cast(string)read(server.location ~ dirSeparator ~ ".hidden" ~ dirSeparator ~ "temp"); // for compressed plugins (managed by init.d)
 							wait(spawnShell("cd " ~ src ~ " && rdmd --build-only " ~ nargs.join(" ") ~ " main.d"));
 							if(server.config.sel.length || server.type == "full" || server.name != "main") {
 								write(server.location ~ "node" ~ __EXE__, read(src ~ "main" ~ __EXE__));
@@ -187,7 +199,7 @@ void main(string[] args) {
 						if(server.type == "hub" || server.type == "full") {
 							immutable src = server.location ~ server.config.sel.replace("/", dirSeparator) ~ dirSeparator ~ (server.type == "full" ? "hub" ~ dirSeparator : "");
 							wait(spawnShell("cd " ~ src ~ " && rdmd --build-only " ~ args.join(" ") ~ " main.d"));
-							if(server.config.sel.length || server.type == "full" || server.name != "hub") {
+							if(server.config.sel.length || server.type == "full" || server.name != "main") {
 								write(server.location ~ "hub" ~ __EXE__, read(src ~ "main" ~ __EXE__));
 								remove(src ~ "main" ~ __EXE__);
 								version(Posix) executeShell("cd " ~ server.location ~ " && chmod u+x hub");
@@ -804,12 +816,6 @@ void printusage() {
 	writeln("Servers path: ", Settings.servers);
 	writeln("Managed servers: ", to!string(serverTuples.length));
 	writeln();
-	writeln("Usage:");
-	writeln("  sel <command> <server> [<options>]");
-	writeln("  sel <server> <command> [<options>]");
-	writeln("  sel <command> [<options>]");
-	writeln();
-	writeln("Commands:");
 }
 
 @property ServerTuple[] serverTuples() {
