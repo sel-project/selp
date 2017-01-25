@@ -97,7 +97,6 @@ JSONValue[] scanMinecraft(string ip, ushort scan_from, ushort scan_to, ref share
 			}
 		}
 	}
-	writeln(data);
 	foreach(ushort port, payload; data) {
 		if(readVarint(payload) == payload.length && readVarint(payload) == 0 && readVarint(payload) == payload.length) {
 			auto json = parseJSON(cast(string)payload);
@@ -111,7 +110,25 @@ JSONValue[] scanMinecraft(string ip, ushort scan_from, ushort scan_to, ref share
 					auto max = "max" in *players;
 					auto protocol = "protocol" in *vers;
 					auto pname = "name" in *vers;
-
+					if(desc.type == JSON_TYPE.OBJECT) {
+						auto text = "text" in *desc;
+						auto extra = "extra" in *desc;
+						if(text && text.type == JSON_TYPE.STRING) {
+							name = text.str;
+						}
+						if(extra && extra.type == JSON_TYPE.ARRAY) {
+							foreach(JSONValue value ; extra.array) {
+								if(value.type == JSON_TYPE.OBJECT) {
+									auto t = "text" in value;
+									if(t && t.type == JSON_TYPE.STRING) {
+										name ~= t.str;
+									}
+								}
+							}
+						}
+					} else if(desc.type == JSON_TYPE.STRING) {
+						name = desc.str;
+					}
 					if(online && max && protocol && pname && online.type == JSON_TYPE.INTEGER && max.type == JSON_TYPE.INTEGER && protocol.type == JSON_TYPE.INTEGER && pname.type == JSON_TYPE.STRING) {
 						ret ~= JSONValue([
 								"port": JSONValue(port),
