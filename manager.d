@@ -40,8 +40,8 @@ alias Config = Tuple!(string, "sel", string, "common", string[], "versions", str
 
 alias ServerTuple = Tuple!(string, "name", string, "location", string, "type", Config, "config");
 
-enum __MANAGER__ = "4.5.0";
-enum __WEBSITE__ = "http://downloads.selproject.org/";
+enum __MANAGER__ = "4.5.1";
+enum __DOWNLOAD__ = "https://github.com/sel-project/sel-server/releases/";
 enum __COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
 enum __LANG__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/lang/";
 enum __UTILS__ = "https://raw.githubusercontent.com/sel-project/sel-utils/master/release.sa";
@@ -791,9 +791,6 @@ void main(string[] args) {
 				writeln("Use: '", launch, " update utils|<server> [-version=latest]'");
 			}
 			break;
-		case "website":
-			writeln(__WEBSITE__);
-			break;
 		default:
 			writeln("'", launch, " ", args.join(" "), "' is not a valid command");
 			break;
@@ -806,7 +803,7 @@ void printusage() {
 	writeln("Copyright (c) 2016-2017 SEL");
 	writeln();
 	writeln("Website: http://selproject.org");
-	writeln("Files: " ~ __WEBSITE__);
+	writeln("Downloads: " ~ __DOWNLOAD__);
 	writeln("Github: https://github.com/sel-project");
 	writeln();
 	writeln("Servers path: ", Settings.servers);
@@ -896,7 +893,8 @@ void saveServerTuples(ServerTuple[] servers) {
 		file ~= Base64.encode(cast(ubyte[])server[0]) ~ "," ~ server[1] ~ "," ~ server[2] ~ newline;
 		write(server.location ~ ".config", "sel=" ~ server.config.sel ~ newline ~ "common=" ~ server.config.common ~ newline ~ "versions=" ~ server.config.versions.join(",") ~ newline ~ "code=" ~ server.config.code.join(",") ~ newline ~ "files=" ~ server.config.files.join(","));
 		version(Windows) {
-			//TODO hide .config
+			import core.sys.windows.winnt : FILE_ATTRIBUTE_HIDDEN;
+			setAttributes(server.location ~ ".config", FILE_ATTRIBUTE_HIDDEN);
 		}
 	}
 	write(Settings.config ~ "sel.conf", file);
@@ -912,25 +910,18 @@ string locationOf(string loc) {
 
 void install(string launch, string path, string type, string vers) {
 	if(!vers.length || vers == "latest") vers = executeShell(launch ~ " latest").output.strip;
-	if(!vers.endsWith(".sa")) vers ~= ".sa";
 	if(!exists(Settings.cache ~ vers)) {
-		writeln("Downloading from " ~ __WEBSITE__ ~ vers);
-		mkdirRecurse(Settings.cache);
-		download(__WEBSITE__ ~ vers, Settings.cache ~ vers);
+		if(!exists(Settings.cache ~ vers ~ ".sa")) {
+			immutable dl = __DOWNLOAD__ ~ "download/v" ~ vers ~ "/" ~ vers ~ ".sa";
+			writeln("Downloading from " ~ dl);
+			mkdirRecurse(Settings.cache);
+			systemDownload(dl, Settings.cache ~ vers ~ ".sa");
+		}
+		executeShell("cd " ~ Settings.cache ~ " && " ~ launch ~ " uncompress " ~ vers ~ ".sa " ~ vers);
 	}
-	if(!exists(Settings.cache ~ "dec" ~ dirSeparator ~ vers)) {
-		executeShell("cd " ~ Settings.cache ~ " && " ~ launch ~ " uncompress " ~ vers ~ " dec" ~ vers);
-	}
-	// copy files from dec0.0.0.sa/ to path/
-	immutable dec = Settings.cache ~ "dec" ~ vers ~ dirSeparator;
+	// copy files from x.x.x/ to path/
+	immutable dec = Settings.cache ~ vers ~ dirSeparator;
 	void copy(string from, string to) {
-		/*version(Windows) {
-			executeShell("xcopy /S /I /Y " ~ from ~ " " ~ to);
-		} else {
-			// not tested yet
-			executeShell("cp -r " ~ from ~ " " ~ to);
-		}*/
-		//if(!to.endsWith(dirSeparator)) to ~= dirSeparator;
 		foreach(string p ; dirEntries(from, SpanMode.depth)) {
 			immutable dest = to ~ p[from.length..$];
 			if(p.isFile) {
