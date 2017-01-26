@@ -21,12 +21,11 @@ import etc.c.curl : CurlOption;
 import std.algorithm : min, canFind;
 import std.ascii : newline;
 import std.base64 : Base64;
-import std.bitmanip : nativeToBigEndian;
+import std.bitmanip : bigEndianToNative, nativeToBigEndian;
 import std.conv : to, ConvException;
-import std.datetime : dur, StopWatch, AutoStart;
+import std.datetime : dur, StopWatch, AutoStart, Clock;
 import std.file;
 import std.json;
-import std.net.curl : HTTP, get, download;
 import std.path : dirSeparator, pathSeparator;
 import std.process;
 import std.regex : ctRegex, replaceAll;
@@ -40,7 +39,7 @@ alias Config = Tuple!(string, "sel", string, "common", string[], "versions", str
 
 alias ServerTuple = Tuple!(string, "name", string, "location", string, "type", Config, "config");
 
-enum __MANAGER__ = "4.5.1";
+enum __MANAGER__ = "4.5.2";
 enum __DOWNLOAD__ = "https://github.com/sel-project/sel-server/releases/";
 enum __COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
 enum __LANG__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/lang/";
@@ -152,11 +151,33 @@ void main(string[] args) {
 			if(args.length > 1) {
 				auto server = getServerByName(args[1].toLower);
 				if(server.name != "") {
-					immutable location = server.location ~ (server.type == "full" ? "hub" ~ dirSeparator : "") ~ dirSeparator;
-					if(exists(location ~ __EXECUTABLE__)) {
-						wait(spawnShell("cd " ~ location ~ " && ." ~ dirSeparator ~ "main about"));
+					JSONValue[string] data;
+					if(server.type == "hub" || server.type == "full") {
+						try {
+							data["hub"] = parseJSON(executeShell("cd " ~ server.location ~ " && ." ~ dirSeparator ~ "hub about").output);
+						} catch(JSONException) {}
+					}
+					if(server.type == "node" || server.type == "full") {
+						try {
+							data["node"] = parseJSON(executeShell("cd " ~ server.location ~ "&& ." ~ dirSeparator ~ "node about").output);
+						} catch(JSONException) {}
+					}
+					if(args.canFind("-json")) {
+						writeln(JSONValue(data).toString());
 					} else {
-						writeln("The server hasn't been built yet");
+						void prt(string what) {
+							auto about = what in data;
+							if(about) {
+								auto software = "software" in *about;
+								writeln(capitalize(what), ":");
+								if(software) {
+									writeln("  Name: ", (*software)["name"]);
+									writeln("  Version: ", (*software)["version"], ((*software)["stable"].type == JSON_TYPE.FALSE ? "-dev" : ""));
+								}
+							}
+						}
+						if("hub" in data) prt("hub");
+						if("node" in data) prt("node");
 					}
 				} else {
 					writeln("There's no server named \"", args[1].toLower, "\"");
@@ -174,7 +195,19 @@ void main(string[] args) {
 					foreach(v ; server.config.versions) args ~= "-version=" ~ v;
 					foreach(c ; server.config.code) args ~= "-I" ~ c.replace("/", dirSeparator);
 					foreach(f ; server.config.files) args ~= "-J" ~ f.replace("/", dirSeparator);
-					/*if(!exists(exe) || force)*/ {
+					bool node = server.type == "node" || server.type == "full";
+					bool hub = server.type == "hub" || server.type == "full";
+					// do not build the hub when the type is full and the version is not changed
+					if(server.type == "full") {
+						auto data = parseJSON(executeShell(launch ~ " about " ~ server.name).output);
+						if(data.type == JSON_TYPE.OBJECT) {
+							auto hub_data = "hub" in data;
+							if(hub_data && hub_data.type == JSON_TYPE.OBJECT) {
+								//TODO compare with source
+							}
+						}
+					}
+					{
 						StopWatch timer = StopWatch(AutoStart.yes);
 						immutable full = server.type == "full";
 						if(server.type == "node" || server.type == "full") {
@@ -454,7 +487,9 @@ void main(string[] args) {
 					saveServerTuples(servers);
 					if(args.length > 2 ? to!bool(args[2]) : true) {
 						foreach(string file ; dirEntries(server.location, SpanMode.breadth)) {
-							if(file.isFile) remove(file);
+							if(file.isFile) {
+								remove(file);
+							}
 						}
 						rmdirRecurse(server.location);
 					}
@@ -519,8 +554,14 @@ void main(string[] args) {
 			}
 			break;
 		case "latest":
-			//TODO get it from the internet
-			writeln("1.0.0");
+			immutable latest = tempDir() ~ "/sel/latest";
+			immutable time = tempDir() ~ "/sel/latest_time";
+			if(!exists(latest) || !exists(time) || (){ ubyte[4] ret=cast(ubyte[])read(time);return bigEndianToNative!uint(ret); }() < Clock.currTime().toUnixTime() - 60 * 60) {
+				mkdirRecurse(tempDir() ~ "/sel");
+				download("https://raw.githubusercontent.com/sel-project/sel-server/master/.latest", latest);
+				write(time, nativeToBigEndian(Clock.currTime().toUnixTime!int()));
+			}
+			writeln((cast(string)read(latest)).strip);
 			break;
 		case "list":
 			writeln("Servers managed by SEL Manager:");
@@ -767,7 +808,7 @@ void main(string[] args) {
 					case "util":
 					case "utils":
 						// download or update sel-utils
-						systemDownload(__UTILS__, Settings.config ~ "utils.sa");
+						download(__UTILS__, Settings.config ~ "utils.sa");
 						wait(spawnShell("cd " ~ Settings.config ~ " && " ~  launch ~ " uncompress utils.sa utils"));
 						remove(Settings.config ~ "utils.sa");
 						break;
@@ -891,6 +932,7 @@ void saveServerTuples(ServerTuple[] servers) {
 	string file = "### SEL MANAGER CONFIGURATION FILE" ~ newline;
 	foreach(ServerTuple server ; servers) {
 		file ~= Base64.encode(cast(ubyte[])server[0]) ~ "," ~ server[1] ~ "," ~ server[2] ~ newline;
+		if(exists(server.location ~ ".config")) remove(server.location ~ ".config");
 		write(server.location ~ ".config", "sel=" ~ server.config.sel ~ newline ~ "common=" ~ server.config.common ~ newline ~ "versions=" ~ server.config.versions.join(",") ~ newline ~ "code=" ~ server.config.code.join(",") ~ newline ~ "files=" ~ server.config.files.join(","));
 		version(Windows) {
 			import core.sys.windows.winnt : FILE_ATTRIBUTE_HIDDEN;
@@ -915,7 +957,7 @@ void install(string launch, string path, string type, string vers) {
 			immutable dl = __DOWNLOAD__ ~ "download/v" ~ vers ~ "/" ~ vers ~ ".sa";
 			writeln("Downloading from " ~ dl);
 			mkdirRecurse(Settings.cache);
-			systemDownload(dl, Settings.cache ~ vers ~ ".sa");
+			download(dl, Settings.cache ~ vers ~ ".sa");
 		}
 		executeShell("cd " ~ Settings.cache ~ " && " ~ launch ~ " uncompress " ~ vers ~ ".sa " ~ vers);
 	}
@@ -970,7 +1012,7 @@ string launchComponent(bool spawn=false)(string component, string[] args, ptrdif
 		immutable runnable = "./" ~ component;
 	}
 	if(!exists(Settings.config ~ "components" ~ dirSeparator ~ component ~ ext)) {
-		systemDownload(__COMPONENTS__ ~ name ~ ".d", Settings.config ~ "components" ~ dirSeparator ~ component ~ ".d");
+		download(__COMPONENTS__ ~ name ~ ".d", Settings.config ~ "components" ~ dirSeparator ~ component ~ ".d");
 		write(Settings.config ~ "components" ~ dirSeparator ~ "version.txt", to!string(vers));
 		wait(spawnShell("cd " ~ Settings.config ~ "components && rdmd --build-only -J. -I" ~ Settings.config ~ "utils" ~ dirSeparator ~ "src" ~ dirSeparator ~ "d " ~ component ~ ".d"));
 		remove(Settings.config ~ "components" ~ dirSeparator ~ component ~ ".d");
@@ -985,9 +1027,18 @@ string launchComponent(bool spawn=false)(string component, string[] args, ptrdif
 	}
 }
 
-void systemDownload(string file, string dest) {
-	HTTP http = HTTP();
+string get(string file) {
+	static import std.net.curl;
+	auto http = std.net.curl.HTTP();
 	http.handle.set(CurlOption.ssl_verifypeer, false);
 	http.handle.set(CurlOption.timeout, 10);
-	download(file, dest, http);
+	return std.net.curl.get(file, http).idup;
+}
+
+void download(string file, string dest) {
+	static import std.net.curl;
+	auto http = std.net.curl.HTTP();
+	http.handle.set(CurlOption.ssl_verifypeer, false);
+	http.handle.set(CurlOption.timeout, 10);
+	std.net.curl.download(file, dest, http);
 }
