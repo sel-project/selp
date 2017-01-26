@@ -365,11 +365,11 @@ void main(string[] args) {
 					try {
 						auto json = parseJSON(cast(string)read(input ~ "package.json"));
 						compress = new Compress(level, format);
-						ubyte[] pack = cast(ubyte[])compress.compress(toJSON(&json));
+						ubyte[] pack = cast(ubyte[])compress.compress(json.toString());
 						pack ~= cast(ubyte[])compress.flush();
 						data = cast(ubyte[])"plugn" ~ nativeToBigEndian(pack.length.to!uint) ~ pack ~ data;
 					} catch(JSONException e) {
-						writeln("Error whilst readin package.json: ", e.msg);
+						writeln("Error whilst reading package.json: ", e.msg);
 						break;
 					}
 				}
