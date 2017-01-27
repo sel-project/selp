@@ -171,8 +171,8 @@ void main(string[] args) {
 								auto software = "software" in *about;
 								writeln(capitalize(what), ":");
 								if(software) {
-									writeln("  Name: ", (*software)["name"]);
-									writeln("  Version: ", (*software)["version"], ((*software)["stable"].type == JSON_TYPE.FALSE ? "-dev" : ""));
+									writeln("  Name: ", (*software)["name"].str);
+									writeln("  Version: ", (*software)["version"].str, ((*software)["stable"].type == JSON_TYPE.FALSE ? "-dev" : ""));
 								}
 							}
 						}
