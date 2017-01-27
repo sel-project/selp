@@ -208,6 +208,7 @@ void main(string[] args) {
 						}
 					}
 					{
+						bool failed = false;
 						StopWatch timer = StopWatch(AutoStart.yes);
 						immutable full = server.type == "full";
 						if(server.type == "node" || server.type == "full") {
@@ -223,23 +224,26 @@ void main(string[] args) {
 							if(server.config.sel.length) remove(src ~ "init" ~ __EXE__);
 							if(exists(server.location ~ dirSeparator ~ ".hidden" ~ dirSeparator ~ "temp")) nargs ~= "-I" ~ tempDir() ~ dirSeparator ~ "sel" ~ dirSeparator ~ cast(string)read(server.location ~ dirSeparator ~ ".hidden" ~ dirSeparator ~ "temp"); // for compressed plugins (managed by init.d)
 							wait(spawnShell("cd " ~ src ~ " && rdmd --build-only " ~ nargs.join(" ") ~ " main.d"));
-							if(server.config.sel.length || server.type == "full" || server.name != "main") {
+							failed = !exists(src ~ "main" ~ __EXE__);
+							if(!failed && (server.config.sel.length || server.type == "full" || server.name != "main")) {
 								write(server.location ~ "node" ~ __EXE__, read(src ~ "main" ~ __EXE__));
 								remove(src ~ "main" ~ __EXE__);
 								version(Posix) executeShell("cd " ~ server.location ~ " && chmod u+x node");
 							}
 						}
-						if(server.type == "hub" || server.type == "full") {
+						if((server.type == "hub" || server.type == "full") && !failed) {
 							immutable src = server.location ~ server.config.sel.replace("/", dirSeparator) ~ dirSeparator ~ (server.type == "full" ? "hub" ~ dirSeparator : "");
 							wait(spawnShell("cd " ~ src ~ " && rdmd --build-only " ~ args.join(" ") ~ " main.d"));
-							if(server.config.sel.length || server.type == "full" || server.name != "main") {
+							failed = !exists(src ~ "main" ~ __EXE__);
+							if(!failed && (server.config.sel.length || server.type == "full" || server.name != "main")) {
 								write(server.location ~ "hub" ~ __EXE__, read(src ~ "main" ~ __EXE__));
 								remove(src ~ "main" ~ __EXE__);
 								version(Posix) executeShell("cd " ~ server.location ~ " && chmod u+x hub");
+								executeShell("cd " ~ server.location ~ " && ." ~ dirSeparator ~ "hub init");
 							}
 						}
 						timer.stop();
-						writeln("Done. Compilation took ", timer.peek.msecs.to!float / 1000, " seconds.");
+						if(!failed) writeln("Done. Compilation took ", timer.peek.msecs.to!float / 1000, " seconds.");
 						//TODO write deprecations and errors
 					}
 				} else {
