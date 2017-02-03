@@ -18,10 +18,10 @@ import core.thread : Thread;
 
 import etc.c.curl : CurlOption;
 
-import std.algorithm : min, canFind;
+import std.algorithm : sort, min, canFind;
 import std.ascii : newline;
 import std.base64 : Base64;
-import std.bitmanip : bigEndianToNative, nativeToBigEndian;
+import std.bitmanip : bigEndianToNative, nativeToBigEndian, peek;
 import std.conv : to, ConvException;
 import std.datetime : dur, StopWatch, AutoStart, Clock;
 import std.file;
@@ -39,7 +39,7 @@ alias Config = Tuple!(string, "sel", string, "common", string[], "versions", str
 
 alias ServerTuple = Tuple!(string, "name", string, "location", string, "type", Config, "config");
 
-enum __MANAGER__ = "4.5.2";
+enum __MANAGER__ = "4.5.3";
 enum __DOWNLOAD__ = "https://github.com/sel-project/sel-server/releases/";
 enum __COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
 enum __LANG__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/lang/";
@@ -373,29 +373,33 @@ void main(string[] args) {
 						}
 					}
 				}
-				string file;
-				size_t count = 0;
+				Tuple!(string, string)[] paths;
 				foreach(string path ; dirEntries(input, SpanMode.breadth)) {
 					immutable fpath = path;
 					if(path.startsWith(input)) path = path[input.length..$];
 					if(fpath.isFile && !ignore_files.canFind(path)) {
-						bool valid = true;
 						foreach(string dir ; ignore_dirs) {
 							if(path.startsWith(dir)) {
-								valid = false;
-								break;
+								continue;
 							}
 						}
-						if(!valid) continue;
-						writeln("Adding ", path);
-						count++;
-						string content = cast(string)read(fpath);
-						file ~= path.replace(dirSeparator, "/") ~ "\n" ~ to!string(content.length) ~ "\n" ~ content;
+						paths ~= tuple(path, fpath);
 					}
 				}
-				writeln("Added ", count, " files (", file.length, " bytes)");
+				sort!"a[0] < b[0]"(paths);
+				ubyte[] file;
+				foreach(path ; paths) {
+					auto content = read(path[1]);
+					writeln("Adding ", path[0], " (", content.length, " bytes)");
+					file ~= cast(ubyte[])path[0];
+					file ~= ubyte.init;
+					file ~= nativeToBigEndian!uint(content.length.to!uint);
+					file ~= cast(ubyte[])content;
+				}
+				writeln("Added ", paths.length, " files (", file.length, " bytes)");
 				Compress compress = new Compress(level, format);
-				ubyte[] data = cast(ubyte[])compress.compress(file);
+				ubyte[] data = cast(ubyte[])"sel-archive-2";
+				data ~= cast(ubyte[])compress.compress(file);
 				data ~= cast(ubyte[])compress.flush();
 				writeln("Compressed into ", data.length, " bytes (", to!float(to!size_t((1 - data.length.to!float / file.length) * 10000)) / 100, "% smaller)");
 				if(plugin) {
@@ -774,22 +778,43 @@ void main(string[] args) {
 				if(!exists(output)) {
 					mkdirRecurse(output);
 				}
+				string file = cast(string)read(args[1]);
+				uint v = 1;
+				if(file.startsWith("sel-archive-2")) {
+					v = 2;
+					file = file["sel-archive-2".length..$];
+				}
 				import std.zlib : UnCompress;
 				UnCompress uncompress = new UnCompress();
-				ubyte[] data = cast(ubyte[])uncompress.uncompress(read(args[1]));
+				ubyte[] data = cast(ubyte[])uncompress.uncompress(file);
 				data ~= cast(ubyte[])uncompress.flush();
-				string file = cast(string)data;
-				while(file.length > 0) {
-					string pname = file[0..file.indexOf("\n")].replace("/", dirSeparator);
-					file = file[file.indexOf("\n")+1..$];
-					size_t length = to!size_t(file[0..file.indexOf("\n")]);
-					file = file[file.indexOf("\n")+1..$];
-					string content = file[0..length];
-					file = file[length..$];
-					if(pname.indexOf(dirSeparator) >= 0) {
-						mkdirRecurse(output ~ pname.split(dirSeparator)[0..$-1].join(dirSeparator));
+				if(v == 1) {
+					file = cast(string)data;
+					while(file.length) {
+						string pname = file[0..file.indexOf("\n")].replace("/", dirSeparator);
+						file = file[file.indexOf("\n")+1..$];
+						size_t length = to!size_t(file[0..file.indexOf("\n")]);
+						file = file[file.indexOf("\n")+1..$];
+						string content = file[0..length];
+						file = file[length..$];
+						if(pname.indexOf(dirSeparator) >= 0) {
+							mkdirRecurse(output ~ pname.split(dirSeparator)[0..$-1].join(dirSeparator));
+						}
+						write(output ~ pname, content);
 					}
-					write(output ~ pname, content);
+				} else if(v == 2) {
+					size_t index = 0;
+					while(index < data.length) {
+						ubyte[] n;
+						while(index < data.length - 4 && data[index++] != 0) n ~= data[index-1];
+						string pname = (cast(string)n).replace("/", dirSeparator);
+						size_t length = peek!uint(data, &index);
+						if(pname.indexOf(dirSeparator) >= 0) {
+							mkdirRecurse(output ~ pname.split(dirSeparator)[0..$-1].join(dirSeparator));
+						}
+						write(output ~ pname, data[index..index+length]);
+						index += length;
+					}
 				}
 			} else {
 				writeln("Use '", launch, " uncompress <archive> <destination>'");
@@ -805,6 +830,12 @@ void main(string[] args) {
 						wait(spawnShell(launch ~ " update libs"));
 						foreach(ServerTuple server ; serverTuples) {
 							wait(spawnShell(launch ~ " update " ~ server.name));
+						}
+						break;
+					case "comp":
+					case "components":
+						foreach(comp ; dirEntries(Settings.config ~ "components", SpanMode.breadth)) {
+							if(comp.isFile) remove(comp);
 						}
 						break;
 					case "lib":
