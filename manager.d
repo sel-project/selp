@@ -378,12 +378,14 @@ void main(string[] args) {
 					immutable fpath = path;
 					if(path.startsWith(input)) path = path[input.length..$];
 					if(fpath.isFile && !ignore_files.canFind(path)) {
+						bool valid = false;
 						foreach(string dir ; ignore_dirs) {
 							if(path.startsWith(dir)) {
-								continue;
+								valid = false;
+								break;
 							}
 						}
-						paths ~= tuple(path, fpath);
+						if(valid) paths ~= tuple(path, fpath);
 					}
 				}
 				sort!"a[0] < b[0]"(paths);
