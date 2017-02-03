@@ -378,7 +378,7 @@ void main(string[] args) {
 					immutable fpath = path;
 					if(path.startsWith(input)) path = path[input.length..$];
 					if(fpath.isFile && !ignore_files.canFind(path)) {
-						bool valid = false;
+						bool valid = true;
 						foreach(string dir ; ignore_dirs) {
 							if(path.startsWith(dir)) {
 								valid = false;
