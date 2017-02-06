@@ -21,7 +21,7 @@ static import std.bitmanip;
 import std.algorithm : remove, canFind;
 import std.base64 : Base64;
 import std.conv : to, ConvException;
-import std.datetime : Clock, UTC;
+import std.datetime : StopWatch;
 import std.digest.md;
 import std.digest.sha;
 import std.process : wait, spawnShell, executeShell;
@@ -144,6 +144,7 @@ void main(string[] args) {
 		error("Wrong packet received");
 	}
 	bool cmd;
+	string name;
 	auto welcome = Login.Welcome.fromBuffer(buffer);
 	if(welcome.status == Login.Welcome.Accepted.STATUS) {
 		auto info = welcome.new Accepted();
@@ -152,22 +153,19 @@ void main(string[] args) {
 			nodes = info.connectedNodes;
 			writeln("Connected to ", address);
 			writeln("Software: ", software, " v", versions[0], ".", versions[1], ".", versions[2]);
-			writeln("Name: ", displayName);
+			writeln("Name: ", (name = displayName));
 			writeln("Remote commands: ", (cmd = remoteCommands));
 			foreach(game ; games) {
-				string name = (){
+				string n = (){
 					switch(game.type) {
 						case Types.Game.POCKET: return "Pocket";
 						case Types.Game.MINECRAFT: return "Minecraft";
 						default: return "Unknown";
 					}
 				}();
-				writeln(name, " protocols: ", game.protocols);
+				writeln(n, " protocols: ", game.protocols);
 			}
 			writeln("Connected nodes: ", nodes.join(", "));
-			version(Windows) {
-				executeShell("title " ~ displayName.replace("|", "^|") ~ " ^| External Console");
-			}
 		}
 	} else if(welcome.status == Login.Welcome.WrongHash.STATUS) {
 		error("Wrong password");
@@ -178,49 +176,41 @@ void main(string[] args) {
 		error("Unknown error");
 	}
 
-	immutable remoteCommands = cmd;
+	ulong ping;
 
-	ulong ping, ping_time;
+	void updateTitle() {
+		version(Windows) {
+			executeShell("title " ~ name ~ " ^| External Console ^| " ~ to!string(ping) ~ " ms");
+		}
+	}
+
+	updateTitle();
+	
+	StopWatch timer;
+	uint expected_count;
 
 	new Thread({
 		uint count = 0;
 		while(true) {
 			Thread.sleep(dur!"seconds"(5));
-			send(new Status.KeepAlive(count++).encode());
-			ping_time = peek;
+			send(new Status.KeepAlive(++count).encode());
+			expected_count = count;
+			timer.stop();
+			timer.reset();
+			timer.start();
 		}
 	}).start();
 
-	new Thread({
-		while(true) {
-			string message = readln().strip;
-			if(message != "") {
-				switch(message.toLower) {
-					case "ping":
-						writeln("Ping: ", ping, " ms");
-						break;
-					case "clear":
-						version(Windows) {
-							immutable cmd = "cls";
-						} else {
-							immutable cmd = "clear";
-						}
-						wait(spawnShell(cmd));
-						break;
-					case "nodes":
-						writeln("Connected nodes: ", nodes.join(", "));
-						break;
-					default:
-						if(remoteCommands) {
-							send(new Connected.Command(message).encode());
-						} else {
-							writeln("The server doesn't allow remote commands");
-						}
-						break;
+	if(cmd) {
+		new Thread({
+			while(true) {
+				string command = readln().strip;
+				if(command.length) {
+					send(new Connected.Command(command).encode());
 				}
 			}
-		}
-	}).start();
+		}).start();
+	}
 
 	while(true) {
 
@@ -233,7 +223,11 @@ void main(string[] args) {
 
 		switch(buffer[0]) {
 			case Status.KeepAlive.ID:
-				ping = peek - ping_time;
+				auto ka = Status.KeepAlive.fromBuffer(buffer);
+				if(ka.count == expected_count) {
+					ping = timer.peek.msecs;
+					updateTitle();
+				}
 				break;
 			case Connected.ConsoleMessage.ID:
 				auto cm = Connected.ConsoleMessage.fromBuffer(buffer);
@@ -262,9 +256,4 @@ void main(string[] args) {
 
 	}
 
-}
-
-@property ulong peek() {
-	auto t = Clock.currTime(UTC());
-	return t.toUnixTime!long * 1000 + t.fracSecs.total!"msecs";
 }
