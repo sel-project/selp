@@ -19,6 +19,7 @@ import core.thread;
 import std.bitmanip : write;
 import std.conv : to;
 import std.random : uniform;
+import std.regex : replaceAll, ctRegex;
 import std.socket;
 import std.stdio : writeln, readln;
 import std.string;
@@ -71,7 +72,7 @@ void main(string[] args) {
 					exit(0);
 				}
 				if(recv >= 14 && buffer[8] == 0) {
-					writeln("<", address, "> ", cast(string)buffer[12..recv-2]);
+					writeln("<", address, "> ", replaceAll(cast(string)buffer[12..recv-2], ctRegex!"§[a-fA-F0-9k-or]", ""));
 				}
 			}
 		} else {

@@ -25,6 +25,7 @@ import std.datetime : Clock, UTC;
 import std.digest.md;
 import std.digest.sha;
 import std.process : wait, spawnShell, executeShell;
+import std.regex : replaceAll, ctRegex;
 import std.socket;
 import std.stdio : write, writeln, readln;
 import std.string;
@@ -236,7 +237,7 @@ void main(string[] args) {
 				break;
 			case Connected.ConsoleMessage.ID:
 				auto cm = Connected.ConsoleMessage.fromBuffer(buffer);
-				writeln("[", cm.node, "][", cm.logger, "] ", cm.message);
+				writeln(replaceAll("[" ~ cm.node ~ "][" ~ cm.logger ~ "] " ~ cm.message, ctRegex!"§[a-fA-F0-9k-or]", ""));
 				break;
 			case Connected.PermissionDenied.ID:
 				writeln("Permission denied");
