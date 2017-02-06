@@ -393,7 +393,7 @@ void main(string[] args) {
 				foreach(path ; paths) {
 					auto content = read(path[1]);
 					writeln("Adding ", path[0], " (", content.length, " bytes)");
-					file ~= cast(ubyte[])path[0];
+					file ~= cast(ubyte[])replace(path[0], dirSeparator, "/");
 					file ~= ubyte.init;
 					file ~= nativeToBigEndian!uint(content.length.to!uint);
 					file ~= cast(ubyte[])content;
