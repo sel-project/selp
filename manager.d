@@ -39,7 +39,7 @@ alias Config = Tuple!(string, "sel", string, "common", string[], "versions", str
 
 alias ServerTuple = Tuple!(string, "name", string, "location", string, "type", Config, "config");
 
-enum __MANAGER__ = "4.5.3";
+enum __MANAGER__ = "4.5.4";
 enum __DOWNLOAD__ = "https://github.com/sel-project/sel-server/releases/";
 enum __COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
 enum __LANG__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/lang/";
@@ -53,7 +53,7 @@ version(Windows) {
 	enum __EXECUTABLE__ = "main";
 }
 
-enum commands = ["about", "build", "clear", "client", "connect", "console", "convert", "delete", "init", "latest", "list", "locate", "open", "ping", "query", "rcon", "scan", "social", "start", "update"];
+enum commands = ["about", "build", "clear", "client", "connect", "console", "convert", "delete", "init", "latest", "list", "locate", "open", "ping", "plugin", "query", "rcon", "scan", "social", "start", "update"];
 
 enum noname = [".", "*", "all", "sel", "this", "manager", "lib", "libs", "util", "utils"];
 
@@ -122,6 +122,7 @@ void main(string[] args) {
 			writeln("  list        list every managed server");
 			writeln("  locate      print the location of a server");
 			writeln("  open        open the file explorer on a server's location");
+			writeln("  plugin      manage a server's plugins");
 			static if(__shortcut) {
 				writeln("  shortcut    create a shortcut for a server (root permissions required)");
 			}
@@ -463,15 +464,19 @@ void main(string[] args) {
 			break;
 		case "console":
 			if(args.length > 1) {
-				ptrdiff_t vers = 1; // latest
+				ptrdiff_t vers = 2; // latest
 				if(args.length > 2) {
-					try {
-						vers = to!uint(args[2]);
-					} catch(ConvException) {}
+					foreach(arg ; args) {
+						if(arg.startsWith("-protocol=")) {
+							try {
+								vers = to!uint(arg[10..$]);
+							} catch(ConvException) {}
+						}
+					}
 				}
 				launchComponent!true("console", [args[1]], vers);
 			} else {
-				writeln("Use '", launch, " console <ip>[:port]'");
+				writeln("Use '", launch, " console <ip>[:port] [-protocol=2]'");
 			}
 			break;
 		case "convert":
@@ -511,10 +516,10 @@ void main(string[] args) {
 			}
 			break;
 		case "init":
-			if(args.length > 2) {
+			if(args.length > 1) {
 				string name = args[1].toLower;
-				string type = args[2].toLower;
-				args = args[3..$];
+				string type = args.length > 2 ? args[2].toLower : "full";
+				args = args[2..$];
 				T find(T)(string key, T def) {
 					foreach(arg ; args) {
 						if(arg.startsWith("-" ~ key.toLower ~ "=")) {
@@ -633,6 +638,51 @@ void main(string[] args) {
 				}
 			} else {
 				writeln("Use '", launch, " ping <ip>[:port] [options] [-json] [-raw]'");
+			}
+			break;
+		case "plugin":
+			if(args.length > 3 && ["add", "update", "remove"].canFind(args[2])) {
+				auto server = getServerByName(args[1].toLower);
+				if(server.name.length) {
+					immutable plugin = args[3].toLower;
+					immutable location = server.location ~ "plugins" ~ dirSeparator;
+					if(!exists(location)) mkdirRecurse(location);
+					final switch(args[2]) {
+						case "add":
+							if(!exists(location ~ plugin ~ ".ssa") && !exists(location ~ plugin)) {
+								//TODO from generic url
+								auto file = "https://github.com/sel-project/sel-plugins/blob/master/releases/" ~ args[3].toLower ~ ".ssa?raw=true";
+								try {
+									download(file, location ~ plugin ~ ".ssa");
+									writeln("The plugin has been installed");
+								} catch(Exception e) {
+									writeln("Cannot download the plugin: ", e.msg);
+								}
+							} else {
+								writeln("A plugin with the same name is already installed");
+							}
+							break;
+						case "update":
+							// check for sa file
+							// read "release" field in JSON
+							// download
+							break;
+						case "remove":
+							if(exists(location ~ plugin ~ ".ssa") && isFile(location ~ plugin ~ ".ssa")) {
+								remove(location ~ plugin ~ ".ssa");
+								writeln("The plugin has been successfully removed");
+							} else if(exists(location ~ plugin)) {
+								writeln("The plugin cannot be removed because it isn't a SEL archive");
+							} else {
+								writeln("The plugin is not installed");
+							}
+							break;
+					}
+				} else {
+					writeln("There's no server named \"", args[1].toLower, "\"");
+				}
+			} else {
+				writeln("Use '", launch, " <server> plugin [add|update|remove] <plugin>'");
 			}
 			break;
 		case "query":
