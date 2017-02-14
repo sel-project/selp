@@ -53,7 +53,7 @@ version(Windows) {
 	enum __EXECUTABLE__ = "main";
 }
 
-enum commands = ["about", "build", "clear", "client", "connect", "console", "convert", "delete", "init", "latest", "list", "locate", "open", "ping", "plugin", "query", "rcon", "scan", "social", "start", "update"];
+enum commands = ["about", "build", "clear", "connect", "console", "convert", "delete", "init", "latest", "list", "locate", "open", "ping", "plugin", "query", "rcon", "scan", "social", "start", "update"];
 
 enum noname = [".", "*", "all", "sel", "this", "manager", "lib", "libs", "util", "utils"];
 
@@ -133,7 +133,6 @@ void main(string[] args) {
 			writeln();
 			writeln("  sel <command> <ip>[:port] [options]");
 			writeln();
-			writeln("  client      simulate a game client");
 			writeln("  console     connect to a server throught the external console protocol");
 			writeln("  ping        ping a server");
 			writeln("  query       query a server (if the server has it enabled)");
@@ -286,50 +285,6 @@ void main(string[] args) {
 				}
 			} else {
 				writeln("Use: '", launch, " clear <server>'");
-			}
-			break;
-		case "client":
-			if(args.length > 2) {
-				string g = args[1].toLower;
-				uint game = ["pocket", "pe", "mcpe"].canFind(g) ? 1 : (["minecraft", "pc", "mc"].canFind(g) ? 2 : 0);
-				if(game != 0) {
-					string ip = args[2];
-					args = args[3..$];
-					T find(T)(string key, T def) {
-						foreach(arg ; args) {
-							if(arg.startsWith("-" ~ key.toLower ~ "=")) {
-								try {
-									return to!T(arg[2+key.length..$]);
-								} catch(ConvException) {}
-							}
-						}
-						return def;
-					}
-					immutable gamestr = game == 1 ? "pocket" : "minecraft";
-					string username = find("username", "");
-					string password = find("password", "");
-					string options = find("options", "");
-					uint protocol = find("protocol", 0);
-					if(protocol == 0) {
-						foreach(string path ; dirEntries(Settings.utils ~ "json" ~ dirSeparator ~ "protocol", SpanMode.breadth)) {
-							if(path.isFile && path.indexOf(gamestr) > 0 && path.endsWith(".json")) {
-								uint p = to!uint(path[path.indexOf(gamestr)+gamestr.length..$-5]);
-								if(p > protocol) protocol = p;
-							}
-						}
-					}
-					immutable vers = protocol << 4 | game;
-					args = [ip];
-					if(username.length) args ~= ["-username=" ~ username];
-					if(password.length) args ~= ["-password=" ~ password];
-					if(options.length) args ~= ["-options=" ~ locationOf(options)];
-					launchComponent!true("client", args, vers);
-				} else {
-					writeln("Invalid game");
-				}
-			} else {
-				// client.exe ip:port username password
-				writeln("Use '", launch, " client <game> <ip>[:port] [-protocol=latest] [-username=random]'");
 			}
 			break;
 		case "compress":
