@@ -26,56 +26,34 @@ sudo bash install.sh
 
 ## Available commands
 
-`sel <command> [<options>]`
+`sel <command> [options]`
 
 * about
 
-	`sel about <server>`
+	`sel about <server> [-json]`
 	
 	Prints informations about a compiled server, like SEL's version and Minecraft and Minecraft: Pocket Edition supported protocols.
 	
+	The `-json` switch will print the informations in json format.
+	
 * build
 
- 	`sel build <server> [<options>]`
+ 	`sel build <server> [rdmd-options]`
 	
-	Compiles a server.
+	Compiles a server using [rdmd](https://dlang.org/rdmd.html) tool.
 	
-	The options will be passed to the RDMD compiler.
-	For example, you can use `-compiler=ldc` to compile using [LDC](https://wiki.dlang.org/LDC) or `-release` to compile in release mode.
-	
-	The `-force=false` switch will exit without compiling if an executable file already exists.
+	The options will be passed to the compiler.
+	For example, you can use `--compiler=ldc2` to compile using [LDC](https://wiki.dlang.org/LDC) or `-release` to compile in release mode.
 
 * clear
 
-	`sel clear <*|server>`
+	`sel clear <server>`
 
-	Clears a server's cache or the whole SEL and RDMD cache.
-	
-* client
-
-	`sel client <game> <ip>[:<port>] [<options>]`
-	
-	Simulates a Minecraft (`sel client minecraft`) or a Minecraft: Pocket Edition (`sel client pocket`) and connects to a server.
-	
-	Available options:
-	
-	* username
-	
-		Indicates the username that will be used to connect to the server. If not specified a random one will be generated.
-		
-	* password
-	
-		Indicates the password associated to the username and will be used to create a client session of the chosen game. If not specified the connection to server will be done in offline mode (without authentication).
-		
-		:warning: Authentication is not implemented yet.
-	
-	* options
-	
-		Indicates an option file.
+	Clears a server's cache.
 	
 * compress
 
-	`sel compress <source> <archive> [<options>]`
+	`sel compress <source> <archive> [-level=6] [-alg=gzip] [-plugin]`
 	
 	Creates a sel archive.
 	
@@ -85,26 +63,21 @@ sudo bash install.sh
 	
 		Indicates the level of compression (0-9). If this option is not set the compression level will be 6.
 		
-	* gzip
+	* alg
 	
-		Indicates that gzip will be the algorithm for the compression.
+		Indicates the algorithm that will be used for the compression (`gzip` or `deflate`).
 		
-	* deflate
+	* plugin
 	
-		Indicates that deflate will be the algorithm for the compression.
+		Indicates that the compression can be used as plugin.
 	
 * connect
 
-	`sel connect <server> [<options>]`
+	`sel connect <server> [-ip=localhost] [-port=28232] [-name=<server>] [-password=] [-main=true]`
 	
 	Connects a node to an hub.
 
 	Available options:
-
-	* name
-
-		Indicates the name of the node that will be used by the hub and other nodes connected to it to identify this node.
-		It should be lowercase and composed only by latin letters and numbers.
 
 	* ip
 
@@ -120,20 +93,29 @@ sudo bash install.sh
 
 		Indicates the port of the hub.
 
+	* name
+
+		Indicates the name of the node that will be used by the hub and other nodes connected to it to identify this node.
+		It should be lowercase and composed only by latin letters and numbers.
+		
+	* password
+	
+		Password of the hub, if required.
+
 	* main
 
-		Indicates whether or not the hub should send newly connected players to the node (`-main=true`) or not (`-main=false`). If not the hub will only send players to the node when transferred, wither via command or node's plugin.
+		Indicates whether or not the hub should send newly connected players to the node (`-main=true`) or not (`-main=false`). If not the hub will only send players to the node when transferred, either via command or node's plugin.
 		This option is set to `true` if not specified.
 	
 * console
 
-	`sel console <ip>[:<port>] [<version>=1]`
+	`sel console <ip>[:port=19134] [-protocol=2]`
 	
-	Connects to a server using the external console protocol with the indicated version, if the server supports it and has it enabled.
+	Connects to a server using the [external console](https://sel-project.github.io/sel-utils/externalconsole/2.html) protocol with the indicated version, if the server supports it and has it enabled.
 
 * convert
 
-	`sel convert <format-from> <format-to> <location-from> [<location-to>=.]`
+	`sel convert <format-from> <format-to> <location-from> [location-to=.]`
 
 	Converts a world to another format.
 
@@ -165,7 +147,7 @@ sudo bash install.sh
 	
 * delete
 
-	`sel delete <server> [<delete-files>=true]`
+	`sel delete <server> [delete-files=true]`
 	
 	Deletes a server from the SEL Manager's list and, optionally, from the device.
 	
@@ -173,7 +155,7 @@ sudo bash install.sh
 	
 * init
 
-	`sel init <server> [<type>=full] [<options>]`
+	`sel init <server> [type=full] [-version=latest] [-path=sel/<server>] [-edu] [-realm]`
 	
 	Creates a new SEL Server, giving it a new name that will be used with other commands to manage it.
 	
@@ -201,15 +183,19 @@ sudo bash install.sh
 		-path=%appdata%/example
 		```
 	
-		Specifies the installation path for the server. By default it's `%appdata%\sel\<server-name>` on Windows and `~/sel/<server-name>` on Linux. If the path already exists every file needed by SEL will be overwritten.
+		Specifies the installation path for the server. By default it's `Documents\sel\<server>` on Windows and `~/sel/<server>` on Linux. If the path already exists every file needed by SEL will be overwritten.
 	
 	* version
 	
-		Specifies the version of SEL Server to be used. It can be a version in format `major.minor.release` (e.g. `-version=1.0.0`), `latest` (for the latest version) or `none` (nothing will be downloaded and the source code should be moved in the installation folder manually).
+		Specifies the version of SEL Server to be used. It can be a version in format `major.minor.release` (e.g. `-version=1.0.0`), `latest` (for the latest version), `none` (nothing will be downloaded and the source code should be moved in the installation folder manually) or `github` (for the latest version from sel-server's github repository).
 	
 	* edu
 	
-		Used only as `-edu` indicates that the server is used for Minecraft: Education Edition. This version is easier to use, having less configuration options.
+		Indicates that the server is used for Minecraft: Education Edition. This version is easier to use, having less configuration options.
+		
+	* realm
+	
+		Indicates that the server is used as a realm, with only one world and no plugins.
 	
 * list
 
@@ -229,9 +215,11 @@ sudo bash install.sh
 
 	`sel open <server>`
 	
+	Opens the system's file explorer to the location of the server.
+	
 * ping
 
-	`sel ping <ip>[:<port>] [<options>]`
+	`sel ping <ip>[:port] [-json] [-raw]`
 	
 	Performs a ping to a Minecraft or a Minecraft: Pocket Edition server and prints the obtained informations.
 
@@ -258,10 +246,26 @@ sudo bash install.sh
 	* recv-timeout
 
 		Specifies the socket's receive timeout in milliseconds.
+		
+* plugin
+
+	`sel <server> plugin add <plugin>`
+	
+		Adds a plugin to a server, if it is a node or a full server. The plugin must be compressed using `sel compress` command with the `-plugin` switch.
+		
+		The plugin is download from the the [sel-plugins](https://github.com/sel-project/sel-plugins9 repository.
+	
+	`sel <server> plugin update <plugin>`
+	
+		Updates a plugin, if it is installed through a .ssa file and in its `package.json` file there's a `release` field.
+	
+	`sel <server> plugin remove <plugin>`
+	
+		Removes a plugin if installed through a .ssa file.
 	
 * query
 
-	`sel query <ip>[:<port>] [-json]`
+	`sel query <ip>[:port] [-json]`
 	
 	Performs a [query](http://wiki.vg/Query) to a Minecraft or a Minecraft: Pocket Edition server which support the protocol and has it enabled. If no port is given either port 25565 (Minecraft's default port) and 19132 (Minecraft: Pocket Edition's default port) will be used.
 	
@@ -269,7 +273,7 @@ sudo bash install.sh
 	
 * rcon
 
-	`sel rcon <ip>[:<port>=25575] <password>`
+	`sel rcon <ip>[:port=25575] <password>`
 	
 	Connects to a Minecraft or Minecraft: Pocket Edition server using the [RCON](http://wiki.vg/RCON) protocol.
 
@@ -289,15 +293,17 @@ sudo bash install.sh
 
 * social
 
-	`sel social <ip>[:<port>]`
+	`sel social <ip>[:port]`
 
 	Retrieves and prints social (website and social accounts) informations about a SEL server or a server that supports the social JSON protocol.
 	
 * start
 
-	`sel start <server>`
+	`sel start <server> [-loop]`
 	
 	Starts an hub or a full SEL Server.
+	
+	The `-loop` switch will restart the server when it's stopped without being killed.
 	
 * uncompress
 
@@ -306,12 +312,6 @@ sudo bash install.sh
 	Decompress a sel archive created with the `sel compress` command.
 	
 * update
-
-	`sel update sel`
-	
-	Updates SEL Manager and its installed components.
-	
-	:warning: This command must be launched with administrator rights to work properly.
 	
 	`sel update utils`
 	
@@ -319,6 +319,6 @@ sudo bash install.sh
 	
 	It's reccomended to run this command every time Minecraft or Minecraft: Pocket Edition are updated, in order to avoid SEL servers' deprecation errors.
 	
-	`sel update <server> [<version>=latest]`
+	`sel update <server> [-version=latest]`
 	
 	Changes the version of a SEL Server. The version format is the same specified in the `init` command.
