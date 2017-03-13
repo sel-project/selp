@@ -853,6 +853,7 @@ void main(string[] args) {
 					case "util":
 					case "utils":
 						// download or update sel-utils
+						mkdirRecurse(Settings.config);
 						download(__UTILS__, Settings.config ~ "utils.sa");
 						wait(spawnShell("cd " ~ Settings.config ~ " && " ~  launch ~ " uncompress utils.sa utils"));
 						remove(Settings.config ~ "utils.sa");
