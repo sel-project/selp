@@ -39,7 +39,7 @@ alias Config = Tuple!(string, "sel", string, "common", string[], "versions", str
 
 alias ServerTuple = Tuple!(string, "name", string, "location", string, "type", Config, "config");
 
-enum __MANAGER__ = "4.5.4";
+enum __MANAGER__ = "4.5.5";
 enum __DOWNLOAD__ = "https://github.com/sel-project/sel-server/releases/";
 enum __COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
 enum __LANG__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/lang/";
@@ -176,8 +176,8 @@ void main(string[] args) {
 								}
 							}
 						}
-						if("hub" in data) prt("hub");
-						if("node" in data) prt("node");
+						prt("hub");
+						prt("node");
 					}
 				} else {
 					writeln("There's no server named \"", args[1].toLower, "\"");
@@ -199,18 +199,31 @@ void main(string[] args) {
 					bool hub = server.type == "hub" || server.type == "full";
 					// do not build the hub when the type is full and the version is not changed
 					if(server.type == "full") {
-						auto data = parseJSON(executeShell(launch ~ " about " ~ server.name).output);
-						if(data.type == JSON_TYPE.OBJECT) {
-							auto hub_data = "hub" in data;
-							if(hub_data && hub_data.type == JSON_TYPE.OBJECT) {
-								//TODO compare with source
+						try {
+							auto data = parseJSON(executeShell(launch ~ " about " ~ server.name ~ " -json").output);
+							if(data.type == JSON_TYPE.OBJECT) {
+								auto hub_data = "hub" in data;
+								if(hub_data && hub_data.type == JSON_TYPE.OBJECT) {
+									//TODO compare with source
+								}
 							}
-						}
+						} catch(JSONException) {}
 					}
 					{
 						bool failed = false;
 						StopWatch timer = StopWatch(AutoStart.yes);
 						immutable full = server.type == "full";
+						if((server.type == "hub" || server.type == "full") && !failed) {
+							immutable src = server.location ~ server.config.sel.replace("/", dirSeparator) ~ dirSeparator ~ (server.type == "full" ? "hub" ~ dirSeparator : "");
+							wait(spawnShell("cd " ~ src ~ " && rdmd --build-only " ~ args.join(" ") ~ " main.d"));
+							failed = !exists(src ~ "main" ~ __EXE__);
+							if(!failed && (server.config.sel.length || server.type == "full" || server.name != "main")) {
+								write(server.location ~ "hub" ~ __EXE__, read(src ~ "main" ~ __EXE__));
+								remove(src ~ "main" ~ __EXE__);
+								version(Posix) executeShell("cd " ~ server.location ~ " && chmod u+x hub");
+								executeShell("cd " ~ server.location ~ " && ." ~ dirSeparator ~ "hub init");
+							}
+						}
 						if(server.type == "node" || server.type == "full") {
 							immutable src = server.location ~ server.config.sel.replace("/", dirSeparator) ~ dirSeparator ~ (server.type == "full" ? "node" ~ dirSeparator : "");
 							string[] nargs = args.dup;
@@ -231,19 +244,9 @@ void main(string[] args) {
 								version(Posix) executeShell("cd " ~ server.location ~ " && chmod u+x node");
 							}
 						}
-						if((server.type == "hub" || server.type == "full") && !failed) {
-							immutable src = server.location ~ server.config.sel.replace("/", dirSeparator) ~ dirSeparator ~ (server.type == "full" ? "hub" ~ dirSeparator : "");
-							wait(spawnShell("cd " ~ src ~ " && rdmd --build-only " ~ args.join(" ") ~ " main.d"));
-							failed = !exists(src ~ "main" ~ __EXE__);
-							if(!failed && (server.config.sel.length || server.type == "full" || server.name != "main")) {
-								write(server.location ~ "hub" ~ __EXE__, read(src ~ "main" ~ __EXE__));
-								remove(src ~ "main" ~ __EXE__);
-								version(Posix) executeShell("cd " ~ server.location ~ " && chmod u+x hub");
-								executeShell("cd " ~ server.location ~ " && ." ~ dirSeparator ~ "hub init");
-							}
-						}
 						timer.stop();
-						if(!failed) writeln("Done. Compilation took ", timer.peek.msecs.to!float / 1000, " seconds.");
+						if(failed) writeln("Failed in ", timer.peek.msecs.to!float / 1000, " seconds.");
+						else writeln("Done. Compilation took ", timer.peek.msecs.to!float / 1000, " seconds.");
 						//TODO write deprecations and errors
 					}
 				} else {
