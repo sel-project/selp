@@ -20,6 +20,7 @@ import core.thread;
 static import std.bitmanip;
 import std.algorithm : remove, canFind;
 import std.base64 : Base64;
+import std.bitmanip : read, nativeToLittleEndian;
 import std.conv : to, ConvException;
 import std.datetime : StopWatch;
 import std.digest.md;
@@ -29,6 +30,7 @@ import std.regex : replaceAll, ctRegex;
 import std.socket;
 import std.stdio : write, writeln, readln;
 import std.string;
+import std.system : Endian;
 import std.typecons : Tuple;
 
 static if(__traits(compiles, import("version.txt"))) {
@@ -37,7 +39,7 @@ static if(__traits(compiles, import("version.txt"))) {
 	
 } else {
 	
-	enum __protocol = 1;
+	enum __protocol = 2;
 	
 }
 
@@ -63,6 +65,12 @@ void main(string[] args) {
 		writeln("Address cannot be resolved: ", e.msg);
 		return;
 	}
+	
+	void error(string message) {
+		writeln(message);
+		//socket.close();
+		exit(0);
+	}
 
 	ubyte[] buffer = new ubyte[2048];
 	ptrdiff_t recv;
@@ -78,25 +86,36 @@ void main(string[] args) {
 	socket.send("classic");
 
 	bool send(ubyte[] data) {
+		static if(__protocol >= 2) data = nativeToLittleEndian(cast(ushort)data.length) ~ data;
 		return socket.send(data) != Socket.ERROR;
 	}
 	
-	void error(string message) {
-		writeln(message);
-		socket.close();
-		exit(0);
+	ubyte[] receiveImpl() {
+		auto recv = socket.receive(buffer);
+		if(recv <= 0) error("Connection closed: " ~ lastSocketError);
+		return buffer[0..recv];
+	}
+	
+	ubyte[] receive() {
+		static if(__protocol >= 2) {
+			ubyte[] data = receiveImpl();
+			if(data.length <= 2) error("Received too small packet");
+			immutable length = read!(ushort, Endian.littleEndian)(data);
+			while(data.length < length) {
+				data ~= receiveImpl();
+			}
+			return data[0..length];
+		} else {
+			return receiveImpl();
+		}
 	}
 
 	// wait for auth credentials
-	recv = socket.receive(buffer);
-	if(recv == Socket.ERROR) {
-		error("Cannot connect: " ~ lastSocketError);
-	} else if(recv == 0) {
-		error("Connection closed by server");
-	} else if(buffer[0] != Login.AuthCredentials.ID) {
+	auto data = receive();
+	if(data[0] != Login.AuthCredentials.ID) {
 		error("Wrong packet received. Maybe the wrong protocol is used?");
 	}
-	auto credentials = Login.AuthCredentials.fromBuffer(buffer);
+	auto credentials = Login.AuthCredentials.fromBuffer(data);
 	if(credentials.protocol != __protocol) {
 		error("Incompaticle protocols: " ~ to!string(credentials.protocol) ~ " is required");
 	} else if(!credentials.hash && !["sha1", "sha224", "sha256", "sha384", "sha512", "md5"].canFind(credentials.hashAlgorithm)) {
@@ -136,16 +155,13 @@ void main(string[] args) {
 
 	string[] nodes;
 	
-	recv = socket.receive(buffer);
-	if(recv <= 0) {
-		error("Connection error");
-	}
-	if(buffer[0] != Login.Welcome.ID) {
-		error("Wrong packet received");
+	data = receive();
+	if(data[0] != Login.Welcome.ID) {
+		error("Wrong packet received, expecting " ~ to!string(Login.Welcome.ID) ~ " but got " ~ to!string(data[0]) ~ " instead");
 	}
 	bool cmd;
 	string name;
-	auto welcome = Login.Welcome.fromBuffer(buffer);
+	auto welcome = Login.Welcome.fromBuffer(data);
 	if(welcome.status == Login.Welcome.Accepted.STATUS) {
 		auto info = welcome.new Accepted();
 		info.decode();
@@ -214,33 +230,28 @@ void main(string[] args) {
 
 	while(true) {
 
-		recv = socket.receive(buffer);
-		if(recv == Socket.ERROR) {
-			error("Connection error: " ~ lastSocketError);
-		} else if(recv == 0) {
-			error("Disconnected from server");
-		}
+		data = receive();
 
-		switch(buffer[0]) {
+		switch(data[0]) {
 			case Status.KeepAlive.ID:
-				auto ka = Status.KeepAlive.fromBuffer(buffer);
+				auto ka = Status.KeepAlive.fromBuffer(data);
 				if(ka.count == expected_count) {
 					ping = timer.peek.msecs;
 					updateTitle();
 				}
 				break;
 			case Connected.ConsoleMessage.ID:
-				auto cm = Connected.ConsoleMessage.fromBuffer(buffer);
+				auto cm = Connected.ConsoleMessage.fromBuffer(data);
 				writeln(replaceAll("[" ~ cm.node ~ "][" ~ cm.logger ~ "] " ~ cm.message, ctRegex!"§[a-fA-F0-9k-or]", ""));
 				break;
 			case Connected.PermissionDenied.ID:
 				writeln("Permission denied");
 				break;
 			case Status.UpdateStats.ID:
-				//writeln(UpdateStats.staticDecode(buffer));
+				//writeln(UpdateStats.staticDecode(data));
 				break;
 			case Status.UpdateNodes.ID:
-				auto un = Status.UpdateNodes.fromBuffer(buffer);
+				auto un = Status.UpdateNodes.fromBuffer(data);
 				final switch(un.action) {
 					case Status.UpdateNodes.ADD:
 						nodes ~= un.node;
