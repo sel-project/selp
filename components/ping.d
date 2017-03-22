@@ -173,9 +173,7 @@ void main(string[] args) {
 		} catch(Throwable) {}
 	}
 
-	JSONValue j = json;
-
-	write(toJSON(&j));
+	write(JSONValue(json).toString());
 
 }
 
