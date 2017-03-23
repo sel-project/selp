@@ -37,10 +37,9 @@ import std.zlib : Compress, UnCompress, HeaderFormat;
 
 alias Config = Tuple!(string, "sel", string, "common", string[], "versions", string[], "code", string[], "files");
 
-alias ServerTuple = Tuple!(string, "name", string, "location", string, "type", Config, "config");
+alias ServerTuple = Tuple!(string, "name", string, "location", string, "type", bool, "deleteable", Config, "config");
 
-enum __MANAGER__ = "4.5.5";
-enum __DOWNLOAD__ = "https://github.com/sel-project/sel-server/releases/";
+enum __MANAGER__ = "4.6.0";
 enum __COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
 enum __LANG__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/lang/";
 enum __UTILS__ = "https://raw.githubusercontent.com/sel-project/sel-utils/master/release.sa";
@@ -450,21 +449,25 @@ void main(string[] args) {
 			if(args.length > 1) {
 				auto server = getServerByName(args[1].toLower);
 				if(server.name != "") {
-					auto servers = serverTuples;
-					foreach(size_t i, ServerTuple s; servers) {
-						if(s.name == server.name) {
-							servers = servers[0..i] ~ servers[i+1..$];
-							break;
-						}
-					}
-					saveServerTuples(servers);
-					if(args.length > 2 ? to!bool(args[2]) : true) {
-						foreach(string file ; dirEntries(server.location, SpanMode.breadth)) {
-							if(file.isFile) {
-								remove(file);
+					if(server.deleteable) {
+						auto servers = serverTuples;
+						foreach(size_t i, ServerTuple s; servers) {
+							if(s.name == server.name) {
+								servers = servers[0..i] ~ servers[i+1..$];
+								break;
 							}
 						}
-						rmdirRecurse(server.location);
+						saveServerTuples(servers);
+						if(args.length > 2 ? to!bool(args[2]) : true) {
+							foreach(string file ; dirEntries(server.location, SpanMode.breadth)) {
+								if(file.isFile) {
+									remove(file);
+								}
+							}
+							rmdirRecurse(server.location);
+						}
+					} else {
+						writeln("The server must be deleted manually");
 					}
 				} else {
 					writeln("There's no server named \"", args[1].toLower, "\"");
@@ -489,6 +492,8 @@ void main(string[] args) {
 					return def;
 				}
 				string path = find("path", Settings.servers ~ name);
+				string user = find("user", "sel-project");
+				string repo = find("repo", find("repository", find("project", "sel-server")));
 				string vers = find("version", "latest").toLower;
 				string[] flags;
 				if(args.canFind("-edu")) flags ~= "Edu";
@@ -507,9 +512,9 @@ void main(string[] args) {
 							}
 							if(!path.endsWith(dirSeparator)) path ~= dirSeparator;
 							if(vers != "none") {
-								install(launch, path, type, vers);
+								install(launch, path, type, user, repo, vers);
 							}
-							auto server = ServerTuple(name, path, type, Config.init);
+							auto server = ServerTuple(name, path, type, !args.canFind("-no-delete"), Config.init);
 							setDefaultConfig(server);
 							server.config.versions ~= flags;
 							saveServerTuples(serverTuples ~ server);
@@ -523,15 +528,25 @@ void main(string[] args) {
 					writeln("A server named \"", name, "\" already exists");
 				}
 			} else {
-				writeln("Use '", launch, " init <server> <hub|node|full> [-version=latest] [-path=] [-edu] [-realm]'");
+				writeln("Use '", launch, " init <server> <hub|node|full> [-user=sel-project] [-repo=sel-server] [-version=latest] [-path=] [-edu] [-realm] [-no-delete]'");
 			}
 			break;
 		case "latest":
-			immutable latest = tempDir() ~ "/sel/latest";
-			immutable time = tempDir() ~ "/sel/latest_time";
+			string user = "sel-project";
+			string repo = "sel-server";
+			foreach(arg ; args) {
+				if(arg.startsWith("-user=")) {
+					user = arg[6..$];
+				} else if(arg.startsWith("-repo=")) {
+					repo = arg[6..$];
+				}
+			}
+			immutable dir = tempDir() ~ dirSeparator ~ "sel" ~ dirSeparator ~ user ~ dirSeparator ~ repo ~ dirSeparator;
+			immutable latest = dir ~ "latest";
+			immutable time = dir ~ "latest_time";
 			if(!exists(latest) || !exists(time) || (){ ubyte[4] ret=cast(ubyte[])read(time);return bigEndianToNative!uint(ret); }() < Clock.currTime().toUnixTime() - 60 * 60) {
-				mkdirRecurse(tempDir() ~ "/sel");
-				download("https://raw.githubusercontent.com/sel-project/sel-server/master/.latest", latest);
+				mkdirRecurse(dir);
+				download("https://raw.githubusercontent.com/" ~ user ~ "/" ~ repo ~ "/master/.latest", latest);
 				write(time, nativeToBigEndian(Clock.currTime().toUnixTime!int()));
 			}
 			writeln((cast(string)read(latest)).strip);
@@ -861,21 +876,24 @@ void main(string[] args) {
 					default:
 						auto server = getServerByName(name);
 						if(server.name.length) {
-							string vers = "";
-							foreach(a ; args) {
-								if(a.startsWith("-version=")) {
-									vers = a[9..$];
-									break;
+							string find(string key, string def) {
+								foreach(arg ; args) {
+									if(arg.startsWith("-" ~ key.toLower ~ "=")) return arg[2+key.length..$];
 								}
+								return def;
 							}
-							install(launch, server.location, server.type, vers);
+							string path = find("path", Settings.servers ~ name);
+							string user = find("user", "sel-project");
+							string repo = find("repo", find("repository", find("project", "sel-server")));
+							string vers = find("version", "latest").toLower;
+							install(launch, server.location, server.type, user, repo, vers);
 						} else {
 							writeln("There's no server named \"", args[1].toLower, "\"");
 						}
 						break;
 				}
 			} else {
-				writeln("Use: '", launch, " update utils|<server> [-version=latest]'");
+				writeln("Use: '", launch, " update <server> [-user=sel-project] [-repo=sel-server] [-version=latest]'");
 			}
 			break;
 		default:
@@ -890,7 +908,6 @@ void printusage() {
 	writeln("Copyright (c) 2016-2017 SEL");
 	writeln();
 	writeln("Website: http://selproject.org");
-	writeln("Downloads: " ~ __DOWNLOAD__);
 	writeln("Github: https://github.com/sel-project");
 	writeln();
 	writeln("Servers path: ", Settings.servers);
@@ -904,7 +921,7 @@ void printusage() {
 		foreach(string s ; (cast(string)read(Settings.config ~ "sel.conf")).split(newline)) {
 			string[] spl = s.split(",");
 			if(spl.length >= 3) {
-				auto server = ServerTuple(cast(string)Base64.decode(spl[0]), spl[1], spl[2], Config.init);
+				auto server = ServerTuple(cast(string)Base64.decode(spl[0]), spl[1], spl[2], spl.length>=4?to!bool(spl[3]):true, Config.init);
 				if(exists(server.location ~ ".config")) {
 					foreach(string line ; (cast(string)read(server.location ~ ".config")).split("\n")) {
 						string[] ls = line.split("=");
@@ -965,7 +982,7 @@ void setDefaultConfig(ref ServerTuple server) {
 	if(name == ".") {
 		string loc = locationOf(name);
 		if(!loc.endsWith(dirSeparator)) loc ~= dirSeparator;
-		return ServerTuple(loc, loc, "node", Config.init);
+		return ServerTuple(loc, loc, "node", true, Config.init);
 	}
 	foreach(ServerTuple server ; serverTuples) {
 		if(server.name == name) return server;
@@ -977,7 +994,7 @@ void saveServerTuples(ServerTuple[] servers) {
 	mkdirRecurse(Settings.config);
 	string file = "### SEL MANAGER CONFIGURATION FILE" ~ newline;
 	foreach(ServerTuple server ; servers) {
-		file ~= Base64.encode(cast(ubyte[])server[0]) ~ "," ~ server[1] ~ "," ~ server[2] ~ newline;
+		file ~= Base64.encode(cast(ubyte[])server.name) ~ "," ~ server.location ~ "," ~ server.type ~ "," ~ server.deleteable.to!string ~ newline;
 		if(exists(server.location ~ ".config")) remove(server.location ~ ".config");
 		write(server.location ~ ".config", "sel=" ~ server.config.sel ~ newline ~ "common=" ~ server.config.common ~ newline ~ "versions=" ~ server.config.versions.join(",") ~ newline ~ "code=" ~ server.config.code.join(",") ~ newline ~ "files=" ~ server.config.files.join(","));
 		version(Windows) {
@@ -996,19 +1013,43 @@ string locationOf(string loc) {
 	}
 }
 
-void install(string launch, string path, string type, string vers) {
+void install(string launch, string path, string type, string user, string repo, string vers) {
 	if(!vers.length || vers == "latest") vers = executeShell(launch ~ " latest").output.strip;
-	if(!exists(Settings.cache ~ vers)) {
-		if(!exists(Settings.cache ~ vers ~ ".sa")) {
-			immutable dl = __DOWNLOAD__ ~ "download/v" ~ vers ~ "/" ~ vers ~ ".sa";
+	immutable dest = Settings.cache ~ user ~ dirSeparator ~ repo ~ dirSeparator;
+	if(!exists(dest ~ vers)) {
+		// download and uncompress
+		if(!exists(dest ~ vers ~ ".sa")) {
+			immutable dl = "https://github.com/" ~ user ~ "/" ~ repo ~ "/releases/download/v" ~ vers ~ "/" ~ vers ~ ".sa";
 			writeln("Downloading from " ~ dl);
-			mkdirRecurse(Settings.cache);
-			download(dl, Settings.cache ~ vers ~ ".sa");
+			mkdirRecurse(dest);
+			download(dl, dest ~ vers ~ ".sa");
 		}
-		executeShell("cd " ~ Settings.cache ~ " && " ~ launch ~ " uncompress " ~ vers ~ ".sa " ~ vers);
+		executeShell("cd " ~ dest ~ " && " ~ launch ~ " uncompress " ~ vers ~ ".sa " ~ vers);
 	}
-	// copy files from x.x.x/ to path/
-	immutable dec = Settings.cache ~ vers ~ dirSeparator;
+	// update res if the downloaded version is newer
+	long versionOf(string v) {
+		auto spl = v.split(".");
+		if(spl.length >= 2 && spl.length <= 4) {
+			try {
+				ulong ret = 0;
+				foreach(i, shift; [48, 32, 16, 0]) {
+					if(spl.length > i) ret += to!ulong(spl[i]) << shift;
+				}
+				return ret;
+			} catch(ConvException) {}
+		}
+		return -1;
+	}
+	if(!exists(dest ~ "res" ~ dirSeparator ~ ".version") || versionOf(vers) > versionOf(cast(string)read(dest ~ "res" ~ dirSeparator ~ ".version"))) {
+		immutable dl = "https://github.com/" ~ user ~ "/" ~ repo ~ "/blob/master/res/res.sa?raw=true";
+		writeln("Updating res from " ~ dl);
+		download(dl, dest ~ "res.sa");
+		executeShell("cd " ~ dest ~ " && " ~ launch ~ " uncompress res.sa res");
+		write(dest ~ "res" ~ dirSeparator ~ ".version", vers);
+		remove(dest ~ "res.sa");
+	}
+	// copy files from vers/ to path/
+	immutable dec = dest ~ vers ~ dirSeparator;
 	void copy(string from, string to) {
 		foreach(string p ; dirEntries(from, SpanMode.depth)) {
 			immutable dest = to ~ p[from.length..$];
@@ -1027,7 +1068,7 @@ void install(string launch, string path, string type, string vers) {
 		copy(dec ~ "node", path ~ "src" ~ dirSeparator ~ "node");
 	}
 	copy(dec ~ "common", path ~ "src" ~ dirSeparator ~ "common");
-	copy(dec ~ "res", path ~ "src" ~ dirSeparator ~ "res");
+	copy(dest ~ "res", path ~ "src" ~ dirSeparator ~ "res");
 }
 
 string[] components() {
