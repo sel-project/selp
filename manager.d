@@ -209,11 +209,19 @@ void main(string[] args) {
 						} catch(JSONException) {}
 					}
 					{
+						//version(Windows) compileLibraries(); //TODO only if outdated
 						bool failed = false;
 						StopWatch timer = StopWatch(AutoStart.yes);
 						immutable full = server.type == "full";
 						if((server.type == "hub" || server.type == "full") && !failed) {
 							immutable src = server.location ~ server.config.sel.replace("/", dirSeparator) ~ dirSeparator ~ (server.type == "full" ? "hub" ~ dirSeparator : "");
+							/+version(Windows) {
+								// build using sul.lib
+								foreach(ref arg ; args) {
+									if(arg.indexOf("utils") > 0) arg = "";
+								}
+								args = ("-L" ~ Settings.config ~ "libs" ~ dirSeparator ~ "sul.lib") ~ args;
+							}+/
 							wait(spawnShell("cd " ~ src ~ " && rdmd --build-only " ~ args.join(" ") ~ " main.d"));
 							failed = !exists(src ~ "main" ~ __EXE__);
 							if(!failed && (server.config.sel.length || server.type == "full" || server.name != "main")) {
@@ -1069,6 +1077,23 @@ void install(string launch, string path, string type, string user, string repo, 
 	}
 	copy(dec ~ "common", path ~ "src" ~ dirSeparator ~ "common");
 	copy(dest ~ "res", path ~ "src" ~ dirSeparator ~ "res");
+}
+
+void compileLibraries() {
+	mkdirRecurse(Settings.config ~ "libs");
+	void compileLibrary(string loc, string dest) {
+		if(exists(dest)) remove(dest);
+		if(!loc.endsWith(dirSeparator)) loc ~= dirSeparator;
+		string[] files;
+		foreach(file ; dirEntries(loc, SpanMode.breadth)) {
+			if(file.isFile) files ~= file[loc.length..$];
+		}
+		wait(spawnShell("cd " ~ loc ~ " && dmd -lib " ~ files.join(" ")));
+		immutable lib = loc ~ files[0].split(dirSeparator)[$-1][0..$-1] ~ "lib";
+		write(dest, read(lib));
+		remove(lib);
+	}
+	compileLibrary(Settings.utils ~ "src" ~ dirSeparator ~ "d", Settings.config ~ "libs" ~ dirSeparator ~ "sul.lib");
 }
 
 string[] components() {
