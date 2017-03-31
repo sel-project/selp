@@ -4,12 +4,12 @@ d:
  - dmd
  
 install:
- - git clone https://github.com/sel-project/sel-utils.git utils
+ - git clone https://github.com/sel-utils/d.git utils
  
 script:
  - rdmd --build-only manager.d
  - cd components
- - rdmd --build-only -I../utils/src/d console.d
+ - rdmd --build-only -I../utils/src console.d
  - rdmd --build-only ping.d
  - rdmd --build-only query.d
  - rdmd --build-only rcon.d
