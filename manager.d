@@ -24,9 +24,10 @@ import std.base64 : Base64;
 import std.bitmanip : bigEndianToNative, nativeToBigEndian, peek;
 import std.conv : to, ConvException;
 import std.datetime : dur, StopWatch, AutoStart, Clock;
+import std.exception : enforce;
 import std.file;
 import std.json;
-import std.path : dirSeparator, pathSeparator;
+import std.path : dirSeparator, pathSeparator, buildPath;
 import std.process;
 import std.regex : ctRegex, replaceAll;
 import std.stdio : writeln, readln;
@@ -56,9 +57,7 @@ enum commands = ["about", "build", "clear", "connect", "console", "convert", "de
 
 enum noname = [".", "*", "all", "sel", "this", "manager", "lib", "libs", "util", "utils"];
 
-version(linux) enum __shortcut = true;
-else version(OSX) enum __shortcut = true;
-else version(FreeBSD) enum __shortcut = true;
+version(Posix) enum __shortcut = true;
 else enum __shortcut = false;
 
 struct Settings {
@@ -73,6 +72,24 @@ struct Settings {
 	
 }
 
+auto spawnCwd(in char[][] command, in char[] cwd) {
+	scope (failure)
+		writeln("When running ", command, " in ", cwd);
+	return spawnProcess(command, null, std.process.Config.none, cwd);
+}
+
+auto executeCwd(in char[][] command, in char[] cwd) {
+	scope (failure)
+		writeln("When running ", command, " in ", cwd);
+	return execute(command, null, std.process.Config.none, size_t.max, cwd);
+}
+
+version (Posix) void makeExecutable(string path) {
+	import core.sys.posix.sys.stat : S_IXUSR;
+
+	path.setAttributes(path.getAttributes | S_IXUSR);
+}
+
 void main(string[] args) {
 
 	version(Windows) {
@@ -84,8 +101,8 @@ void main(string[] args) {
 			Settings.servers = fromStringz((toUTF8(docs)).ptr);
 		}
 	} else {
-		Settings.home = locationOf("$HOME");
-		Settings.servers = locationOf("$HOME");
+		Settings.home = environment["HOME"];
+		Settings.servers = environment["HOME"];
 	}
 	if(!Settings.home.endsWith(dirSeparator)) Settings.home ~= dirSeparator;
 	if(!Settings.servers.endsWith(dirSeparator)) Settings.servers ~= dirSeparator;
@@ -153,12 +170,12 @@ void main(string[] args) {
 					JSONValue[string] data;
 					if(server.type == "hub" || server.type == "full") {
 						try {
-							data["hub"] = parseJSON(executeShell("cd " ~ server.location ~ " && ." ~ dirSeparator ~ "hub about").output);
+							data["hub"] = parseJSON(executeCwd(["." ~ dirSeparator ~ "hub", "about"], server.location).output);
 						} catch(JSONException) {}
 					}
 					if(server.type == "node" || server.type == "full") {
 						try {
-							data["node"] = parseJSON(executeShell("cd " ~ server.location ~ "&& ." ~ dirSeparator ~ "node about").output);
+							data["node"] = parseJSON(executeCwd(["." ~ dirSeparator ~ "node", "about"], server.location).output);
 						} catch(JSONException) {}
 					}
 					if(args.canFind("-json")) {
@@ -199,7 +216,7 @@ void main(string[] args) {
 					// do not build the hub when the type is full and the version is not changed
 					if(server.type == "full") {
 						try {
-							auto data = parseJSON(executeShell(launch ~ " about " ~ server.name ~ " -json").output);
+							auto data = parseJSON(execute([launch, "about", server.name, "-json"]).output);
 							if(data.type == JSON_TYPE.OBJECT) {
 								auto hub_data = "hub" in data;
 								if(hub_data && hub_data.type == JSON_TYPE.OBJECT) {
@@ -214,33 +231,37 @@ void main(string[] args) {
 						immutable full = server.type == "full";
 						if((server.type == "hub" || server.type == "full") && !failed) {
 							immutable src = server.location ~ server.config.sel.replace("/", dirSeparator) ~ dirSeparator ~ (server.type == "full" ? "hub" ~ dirSeparator : "");
-							wait(spawnShell("cd " ~ src ~ " && rdmd --build-only " ~ args.join(" ") ~ " main.d"));
+							wait(spawnCwd(["rdmd", "--build-only"] ~ args ~ "main.d", src));
+							string hubPath = buildPath(server.location, "hub");
 							failed = !exists(src ~ "main" ~ __EXE__);
 							if(!failed && (server.config.sel.length || server.type == "full" || server.name != "main")) {
 								write(server.location ~ "hub" ~ __EXE__, read(src ~ "main" ~ __EXE__));
 								remove(src ~ "main" ~ __EXE__);
-								version(Posix) executeShell("cd " ~ server.location ~ " && chmod u+x hub");
-								executeShell("cd " ~ server.location ~ " && ." ~ dirSeparator ~ "hub init");
+								version(Posix) makeExecutable(hubPath);
+								executeCwd([hubPath, "init"], server.location);
 							}
 						}
 						if(server.type == "node" || server.type == "full") {
 							immutable src = server.location ~ server.config.sel.replace("/", dirSeparator) ~ dirSeparator ~ (server.type == "full" ? "node" ~ dirSeparator : "");
 							string[] nargs = args.dup;
-							wait(spawnShell("cd " ~ src ~ " && rdmd --build-only " ~ nargs.join(" ") ~ " init.d"));
+							wait(spawnCwd(["rdmd", "--build-only"] ~ nargs ~ " init.d", src));
+							string initPath = buildPath(server.location, "init");
 							if(server.config.sel.length || server.type == "full") {
 								write(server.location ~ "init" ~ __EXE__, read(src ~ "init" ~ __EXE__));
-								version(Posix) executeShell("cd " ~ server.location ~ " && chmod u+x init");
+								version(Posix) makeExecutable(initPath);
 							}
-							wait(spawnShell("cd " ~ server.location ~ " && ." ~ dirSeparator ~ "init"));
+							wait(spawnCwd([initPath], server.location));
 							remove(server.location ~ "init" ~ __EXE__);
 							if(server.config.sel.length) remove(src ~ "init" ~ __EXE__);
-							if(exists(server.location ~ dirSeparator ~ ".hidden" ~ dirSeparator ~ "temp")) nargs ~= "-I" ~ tempDir() ~ dirSeparator ~ "sel" ~ dirSeparator ~ cast(string)read(server.location ~ dirSeparator ~ ".hidden" ~ dirSeparator ~ "temp"); // for compressed plugins (managed by init.d)
-							wait(spawnShell("cd " ~ src ~ " && rdmd --build-only " ~ nargs.join(" ") ~ " main.d"));
+							if(exists(buildPath(server.location, ".hidden", "temp")))
+								nargs ~= "-I" ~ buildPath(tempDir, "sel", readText(buildPath(server.location, ".hidden", "temp"))); // for compressed plugins (managed by init.d)
+							wait(spawnCwd(["rdmd", "--build-only"] ~ nargs ~ "main.d", src));
+							string nodePath = buildPath(server.location, "node");
 							failed = !exists(src ~ "main" ~ __EXE__);
 							if(!failed && (server.config.sel.length || server.type == "full" || server.name != "main")) {
 								write(server.location ~ "node" ~ __EXE__, read(src ~ "main" ~ __EXE__));
 								remove(src ~ "main" ~ __EXE__);
-								version(Posix) executeShell("cd " ~ server.location ~ " && chmod u+x node");
+								version(Posix) makeExecutable(nodePath);
 							}
 						}
 						timer.stop();
@@ -302,11 +323,11 @@ void main(string[] args) {
 				}
 				immutable odir = args[2].indexOf(dirSeparator) >= 0 ? args[2].split(dirSeparator)[0..$-1].join(dirSeparator) : ".";
 				version(Windows) {
-					immutable input = executeShell("cd " ~ args[1] ~ " && cd").output.strip ~ dirSeparator;
-					immutable o = executeShell("cd " ~ odir ~ " && cd").output.strip;
+					immutable input = locationOf(args[1]) ~ dirSeparator;
+					immutable o = locationOf(odir);
 				} else {
-					immutable input = executeShell("cd " ~ args[1] ~ " && pwd").output.strip ~ dirSeparator;
-					immutable o = executeShell("cd " ~ odir ~ " && pwd").output.strip;
+					immutable input = locationOf(args[1]) ~ dirSeparator;
+					immutable o = locationOf(odir);
 				}
 				immutable name = args[2][args[2].indexOf(dirSeparator)+1..$];
 				immutable ext = plugin ? ".ssa" : ".sa";
@@ -402,7 +423,7 @@ void main(string[] args) {
 						ushort port = find("port", cast(ushort)28232);
 						bool main = find("main", true);
 						void connect() {
-							wait(spawnShell("cd " ~ server.location ~ " && ." ~ dirSeparator ~ "node " ~ name ~ " " ~ ip ~ " " ~ to!string(port) ~ " " ~ to!string(main) ~ " " ~ password));
+							wait(spawnCwd(["." ~ dirSeparator ~ "node ", name,  ip, to!string(port), to!string(main), password], server.location));
 						}
 						connect();
 						// reconnect the node when it stops until sel manager is closed
@@ -502,14 +523,7 @@ void main(string[] args) {
 					if(!noname.canFind(name)) {
 						if(type == "hub" || type == "node" || type == "full") {
 							// get real path
-							version(Windows) {
-								executeShell("mkdir \\a " ~ path);
-								path = executeShell("cd " ~ path ~ " && cd").output.strip;
-							} else {
-								// not tested yet
-								executeShell("mkdir -p " ~ path);
-								path = executeShell("cd " ~ path ~ " && pwd").output.strip;
-							}
+							mkdirRecurse(path);
 							if(!path.endsWith(dirSeparator)) path ~= dirSeparator;
 							if(vers != "none") {
 								install(launch, path, type, user, repo, vers);
@@ -574,9 +588,9 @@ void main(string[] args) {
 					version(Windows) {
 						immutable cmd = "start";
 					} else {
-						immutable cmd = "nautilus";
+						immutable cmd = "xdg-open";
 					}
-					wait(spawnShell(cmd ~ " " ~ getServerByName(args[1].toLower).location));
+					wait(spawnProcess([cmd, getServerByName(args[1].toLower).location]));
 				} else {
 					writeln("There's no server named \"", args[1].toLower, "\"");
 				}
@@ -744,11 +758,13 @@ void main(string[] args) {
 			if(args.length > 1) {
 				auto server = getServerByName(args[1].toLower);
 				if(server.name != "") {
-					write(server.location ~ "script.d", "module script;import std.process;import std.string;void main(string[] args){args[0]=\"" ~ server.name ~ "\";wait(spawnShell(\"sel \"~args.join(\" \")));}");
-					wait(spawnShell("cd " ~ server.location ~ " && rdmd --build-only -release script.d"));
-					remove(server.location ~ "script.d");
-					wait(spawnShell("sudo mv " ~ server.location ~ "script /usr/bin/" ~ server.name));
-					writeln("You can now use '", server.name, " <command> [options]' as a shortcut for '", launch, " <command> ", server.name, " [options]'");
+					try {
+						write("/usr/bin/" ~ server.name, "#!/bin/sh\nsel '\"" ~ server.name ~ "\"' $@");
+						makeExecutable("/usr/bin/" ~ server.name);
+						writeln("You can now use '", server.name, " <command> [options]' as a shortcut for '", launch, " <command> ", server.name, " [options]'");
+					} catch (FileException) {
+						writeln("Failed creating file /usr/bin/" ~ server.name ~ ", are you root?");
+					}
 				} else {
 					writeln("There's no server named \"", args[1].toLower, "\"");
 				}
@@ -772,19 +788,19 @@ void main(string[] args) {
 					immutable loop = args.canFind("-loop");
 					if(server.type == "hub") {
 						do {
-							wait(spawnShell("cd " ~ server.location ~ " && ." ~ dirSeparator ~ "hub"));
+							enforce(wait(spawnCwd(["." ~ dirSeparator ~ "hub"], server.location)) == 0);
 						} while(loop);
 					} else if(server.type == "full") {
 						bool rebuild;
 						do {
 							rebuild = false;
 							if(exists(server.location ~ "resources" ~ dirSeparator ~ ".handshake")) remove(server.location ~ "resources" ~ dirSeparator ~ ".handshake");
-							new Thread({ wait(spawnShell("cd " ~ server.location ~ " && ." ~ dirSeparator ~ "hub")); }).start();
-							executeShell("cd " ~ server.location ~ " && ." ~ dirSeparator ~ "node");
+							new Thread({ wait(spawnCwd(["." ~ dirSeparator ~ "hub"], server.location)); }).start();
+							wait(spawnCwd(["." ~ dirSeparator ~ "node"], server.location));
 							if(exists(server.location ~ ".hidden" ~ dirSeparator ~ "rebuild")) {
 								rebuild = true;
 								remove(server.location ~ ".hidden" ~ dirSeparator ~ "rebuild");
-								wait(spawnShell(launch ~ " build " ~ server.name));
+								wait(spawnProcess([launch, "build", server.name]));
 							}
 						} while(loop || rebuild);
 					} else {
@@ -851,10 +867,10 @@ void main(string[] args) {
 				switch(name) {
 					case "*":
 					case "all":
-						wait(spawnShell(launch ~ " update sel"));
-						wait(spawnShell(launch ~ " update libs"));
+						wait(spawnProcess([launch, "update", "sel"]));
+						wait(spawnProcess([launch, "update", "libs"]));
 						foreach(ServerTuple server ; serverTuples) {
-							wait(spawnShell(launch ~ " update " ~ server.name));
+							wait(spawnProcess([launch, "update", server.name]));
 						}
 						break;
 					case "comp":
@@ -870,7 +886,7 @@ void main(string[] args) {
 						// download or update sel-utils
 						mkdirRecurse(Settings.config);
 						download(__UTILS__, Settings.config ~ "utils.sa");
-						wait(spawnShell("cd " ~ Settings.config ~ " && " ~  launch ~ " uncompress utils.sa utils"));
+						wait(spawnCwd([launch, "uncompress", "utils.sa", "utils"], Settings.config));
 						remove(Settings.config ~ "utils.sa");
 						break;
 					default:
@@ -1014,7 +1030,7 @@ string locationOf(string loc) {
 }
 
 void install(string launch, string path, string type, string user, string repo, string vers) {
-	if(!vers.length || vers == "latest") vers = executeShell(launch ~ " latest").output.strip;
+	if(!vers.length || vers == "latest") vers = execute([launch, "latest"]).output.strip;
 	immutable dest = Settings.cache ~ user ~ dirSeparator ~ repo ~ dirSeparator;
 	if(!exists(dest ~ vers)) {
 		// download and uncompress
@@ -1024,7 +1040,7 @@ void install(string launch, string path, string type, string user, string repo, 
 			mkdirRecurse(dest);
 			download(dl, dest ~ vers ~ ".sa");
 		}
-		executeShell("cd " ~ dest ~ " && " ~ launch ~ " uncompress " ~ vers ~ ".sa " ~ vers);
+		executeCwd([launch, "uncompress", vers ~ ".sa", vers], dest);
 	}
 	// update res if the downloaded version is newer
 	long versionOf(string v) {
@@ -1044,7 +1060,7 @@ void install(string launch, string path, string type, string user, string repo, 
 		immutable dl = "https://github.com/" ~ user ~ "/" ~ repo ~ "/blob/master/res/res.sa?raw=true";
 		writeln("Updating res from " ~ dl);
 		download(dl, dest ~ "res.sa");
-		executeShell("cd " ~ dest ~ " && " ~ launch ~ " uncompress res.sa res");
+		executeCwd([launch, "uncompress", "res.sa", "res"], dest);
 		write(dest ~ "res" ~ dirSeparator ~ ".version", vers);
 		remove(dest ~ "res.sa");
 	}
@@ -1098,19 +1114,20 @@ string launchComponent(bool spawn=false)(string component, string[] args, ptrdif
 		immutable ext = "";
 		immutable runnable = "./" ~ component;
 	}
+	immutable cwd = Settings.config ~ "components";
 	if(!exists(Settings.config ~ "components" ~ dirSeparator ~ component ~ ext)) {
 		download(__COMPONENTS__ ~ name ~ ".d", Settings.config ~ "components" ~ dirSeparator ~ component ~ ".d");
 		write(Settings.config ~ "components" ~ dirSeparator ~ "version.txt", to!string(vers));
-		wait(spawnShell("cd " ~ Settings.config ~ "components && rdmd --build-only -J. -I" ~ Settings.config ~ "utils" ~ dirSeparator ~ "src" ~ dirSeparator ~ "d " ~ component ~ ".d"));
+		wait(spawnCwd(["rdmd", "--build-only", "-J.", "-I" ~ buildPath(Settings.config, "utils", "src", "d"), component ~ ".d"], cwd));
 		remove(Settings.config ~ "components" ~ dirSeparator ~ component ~ ".d");
 		remove(Settings.config ~ "components" ~ dirSeparator ~ "version.txt");
 	}
-	immutable cmd = "cd " ~ Settings.config ~ "components && " ~ runnable ~ " " ~ args.join(" ");
+	const cmd = [runnable] ~ args;
 	static if(spawn) {
-		wait(spawnShell(cmd));
+		wait(spawnCwd(cmd, cwd));
 		return "";
 	} else {
-		return executeShell(cmd).output.strip;
+		return executeCwd(cmd, cwd).output.strip;
 	}
 }
 
@@ -1123,9 +1140,11 @@ string get(string file) {
 }
 
 void download(string file, string dest) {
+	writeln("Downloading ", file, " into ", dest);
 	static import std.net.curl;
 	auto http = std.net.curl.HTTP();
-	http.handle.set(CurlOption.ssl_verifypeer, false);
 	http.handle.set(CurlOption.timeout, 10);
 	std.net.curl.download(file, dest, http);
+	if(http.statusLine.code != 200)
+		throw new Exception("Failed to download file " ~ file ~ " (HTTP error code " ~ http.statusLine.code.to!string ~ ")");
 }
