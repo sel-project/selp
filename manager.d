@@ -342,9 +342,9 @@ void main(string[] args) {
 				if(exists(input ~ dirSeparator ~ ".selignore")) {
 					foreach(string line ; (cast(string)read(input ~ dirSeparator ~ ".selignore")).split("\n")) {
 						version(Windows) {
-							line = line.strip.replace(r"/", r"\");
+							line = line.strip.replace(`/`, `\`);
 						} else {
-							line = line.strip.replace(r"\", r"/");
+							line = line.strip.replace(`\`, `/`);
 						}
 						if(line != "") {
 							if(line.endsWith(dirSeparator)) ignore_dirs ~= line;
@@ -560,8 +560,14 @@ void main(string[] args) {
 			immutable time = dir ~ "latest_time";
 			if(!exists(latest) || !exists(time) || (){ ubyte[4] ret=cast(ubyte[])read(time);return bigEndianToNative!uint(ret); }() < Clock.currTime().toUnixTime() - 60 * 60) {
 				mkdirRecurse(dir);
-				download("https://raw.githubusercontent.com/" ~ user ~ "/" ~ repo ~ "/master/.latest", latest);
-				write(time, nativeToBigEndian(Clock.currTime().toUnixTime!int()));
+				auto json = parseJSON(get("https://api.github.com/repos/" ~ user ~ "/" ~ repo ~ "/releases").idup);
+				if(json.type == JSON_TYPE.OBJECT) {
+					auto name = "name" in json;
+					if(name && name.type == JSON_TYPE.STRING) {
+						write(latest, name.str);
+						write(time, nativeToBigEndian(Clock.currTime().toUnixTime!int()));
+					}
+				}
 			}
 			writeln((cast(string)read(latest)).strip);
 			break;
