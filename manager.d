@@ -1118,7 +1118,7 @@ string launchComponent(bool spawn=false)(string component, string[] args, ptrdif
 	if(!exists(Settings.config ~ "components" ~ dirSeparator ~ component ~ ext)) {
 		download(__COMPONENTS__ ~ name ~ ".d", Settings.config ~ "components" ~ dirSeparator ~ component ~ ".d");
 		write(Settings.config ~ "components" ~ dirSeparator ~ "version.txt", to!string(vers));
-		wait(spawnCwd(["rdmd", "--build-only", "-J.", "-I" ~ buildPath(Settings.config, "utils", "src", "d"), component ~ ".d"], cwd));
+		wait(spawnCwd(["dub", "build", "--single", component ~ ".d"], cwd));
 		remove(Settings.config ~ "components" ~ dirSeparator ~ component ~ ".d");
 		remove(Settings.config ~ "components" ~ dirSeparator ~ "version.txt");
 	}

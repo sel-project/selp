@@ -1,3 +1,11 @@
+/+ dub.sdl:
+	name "console"
+	description "External Console command-line application"
+	authors "Kripth"
+	license "GPL-3.0"
+	dependency "sel-utils" version="~>1.1.82"
+	stringImportPaths "."
++/
 /*
  * Copyright (c) 2016-2017 SEL
  * 

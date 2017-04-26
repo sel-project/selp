@@ -1,3 +1,9 @@
+/+ dub.sdl:
+	name "rcon"
+	description "RCON (remote console) command-line application"
+	authors "Kripth"
+	license "GPL-3.0"
++/
 /*
  * Copyright (c) 2016-2017 SEL
  * 

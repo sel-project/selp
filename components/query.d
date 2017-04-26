@@ -1,3 +1,9 @@
+/+ dub.sdl:
+	name "query"
+	description "Query a Minecraft or Minecraft: Pocket Edition server using the UT3 query protocol"
+	authors "Kripth"
+	license "GPL-3.0"
++/
 /*
  * Copyright (c) 2016-2017 SEL
  * 

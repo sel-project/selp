@@ -1,3 +1,9 @@
+/+ dub.sdl:
+	name "convert"
+	description "Minecraft and Minecraft: Pocket Edition world conversion"
+	authors "Kripth"
+	license "GPL-3.0"
++/
 /*
  * Copyright (c) 2016-2017 SEL
  * 

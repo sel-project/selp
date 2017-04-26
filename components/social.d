@@ -1,3 +1,9 @@
+/+ dub.sdl:
+	name "social"
+	description "Get social informations of a Minecraft or a Minecraft: Pocket Edition server that supports the social packet"
+	authors "Kripth"
+	license "GPL-3.0"
++/
 /*
  * Copyright (c) 2016-2017 SEL
  * 
