@@ -11,6 +11,3 @@ rm -r -f manager.d
 # move to /usr/bin/
 mv manager sel
 mv sel /usr/bin
-
-# update libraries
-sel update libs

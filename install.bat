@@ -10,5 +10,4 @@ if exist "%windir%\SysWOW64\sel.exe" del %windir%\SysWOW64\sel.exe
 copy sel.exe %windir%\System32
 if exist "%windir%\SysWOW64" copy sel.exe %windir%\SysWOW64
 del sel.exe
-sel update utils
 pause
