@@ -13,14 +13,14 @@ Additionally, the Linux's install script uses the wget command, you can install 
 
 #### Windows
 
-Download [install.bat](https://raw.githubusercontent.com/sel-project/sel-manager/master/install.bat) and run it as administrator.
+Download [install.bat](https://raw.githubusercontent.com/sel-project/sel-manager/sel-server-2/install.bat) and run it as administrator.
 
 #### Linux
 
-Download [install.sh](https://raw.githubusercontent.com/sel-project/sel-manager/master/install.sh) and run it as superuser.
+Download [install.sh](https://raw.githubusercontent.com/sel-project/sel-manager/sel-server-2/install.sh) and run it as superuser.
 
 ```
-wget https://raw.githubusercontent.com/sel-project/sel-manager/master/install.sh
+wget https://raw.githubusercontent.com/sel-project/sel-manager/sel-server-2/install.sh
 sudo bash install.sh
 ```
 
@@ -28,48 +28,24 @@ sudo bash install.sh
 
 `sel <command> [options]`
 
+`sel <server> <command> [options]`
+
+**Jump to**: [about](#about), [build](#build), [connect](#connect),
+
 * about
 
-	`sel about <server> [-json]`
+	`sel about <server>`
 	
-	Prints informations about a compiled server, like SEL's version and Minecraft and Minecraft: Pocket Edition supported protocols.
-	
-	The `-json` switch will print the informations in json format.
+	Prints informations about a server.
 	
 * build
 
- 	`sel build <server> [rdmd-options]`
+ 	`sel build <server> [-release] [dub-options]`
 	
-	Compiles a server using [rdmd](https://dlang.org/rdmd.html) tool.
+	Compiles a server using [dub](https://code.dlang.org/getting_started).
 	
 	The options will be passed to the compiler.
 	For example, you can use `--compiler=ldc2` to compile using [LDC](https://wiki.dlang.org/LDC) or `-release` to compile in release mode.
-
-* clear
-
-	`sel clear <server>`
-
-	Clears a server's cache.
-	
-* compress
-
-	`sel compress <source> <archive> [-level=6] [-alg=gzip] [-plugin]`
-	
-	Creates a sel archive.
-	
-	Available options:
-	
-	* level
-	
-		Indicates the level of compression (0-9). If this option is not set the compression level will be 6.
-		
-	* alg
-	
-		Indicates the algorithm that will be used for the compression (`gzip` or `deflate`).
-		
-	* plugin
-	
-		Indicates that the compression can be used as plugin.
 	
 * connect
 
@@ -113,38 +89,6 @@ sudo bash install.sh
 	
 	Connects to a server using the [external console](https://sel-project.github.io/sel-utils/externalconsole/2.html) protocol with the indicated version, if the server supports it and has it enabled.
 
-* convert
-
-	`sel convert <format-from> <format-to> <location-from> [location-to=.]`
-
-	Converts a world to another format.
-
-	Available formats:
-
-	* [Anvil](http://minecraft.gamepedia.com/Anvil_file_format)
-
-		Minecraft's world format since 1.2.
-
-	* [LevelDB](http://minecraft.gamepedia.com/Pocket_Edition_level_format#LevelDB_format)
-
-		Minecraft: Pocket Edition's format since 1.0.0 (also known as 0.17).
-
-	* sel-be
-
-		SEL's format with big-endian data types.
-
-	* sel-le
-
-		SEL's format with little-endian data types.
-
-	* sel
-
-		SEL's format with the machine's endianness.
-
-	:warning: This feature is not fully supported yet and may not work properly
-
-	:warning: Only blocks are converted. Tiles and entities will be supported in the future.
-	
 * delete
 
 	`sel delete <server> [delete-files=true]`
@@ -155,7 +99,7 @@ sudo bash install.sh
 	
 * init
 
-	`sel init <server> [type=full] [-version=latest] [-path=sel/<server>] [-edu] [-realm]`
+	`sel init <server> [-type=lite] [-path=sel/<server>] [-version=latest] [-user=sel-project] [-repo=sel-server] [-edu] [-realm]`
 	
 	Creates a new SEL Server, giving it a new name that will be used with other commands to manage it.
 	
@@ -169,9 +113,9 @@ sudo bash install.sh
 	
 		The gameplay-related part of a SEL server. It needs to be connected to an hub in order to work, action that can be done using the `sel connect` command.
 	
-	* full
+	* lite
 	
-		A full server is composed by an hub and a node that run simultaneously on the same machine. It can be started using `sel start` and the hub-node connection is done automatically.
+		A lite server is composed by an hub and a node that run on a single application using message-passing instead of sockets. It can be started using `sel start`.
 		
 	Available options:
 	
@@ -187,7 +131,11 @@ sudo bash install.sh
 	
 	* version
 	
-		Specifies the version of SEL Server to be used. It can be a version in format `major.minor.release` (e.g. `-version=1.0.0`), `latest` (for the latest version), `none` (nothing will be downloaded and the source code should be moved in the installation folder manually) or `github` (for the latest version from sel-server's github repository).
+		Specifies the version of SEL Server to be used. It can be a version in format `major.minor.patch` (e.g. `-version=1.0.0`), `latest` (for the latest version), `none` (nothing will be downloaded and the source code should be moved in the installation folder manually) or a branch, for example `~master` or `~test-new-api`.
+	
+	* user
+	
+	* repo
 	
 	* edu
 	
@@ -246,22 +194,6 @@ sudo bash install.sh
 	* recv-timeout
 
 		Specifies the socket's receive timeout in milliseconds.
-		
-* plugin
-
-	`sel <server> plugin add <plugin>`
-	
-		Adds a plugin to a server, if it is a node or a full server. The plugin must be compressed using `sel compress` command with the `-plugin` switch.
-		
-		The plugin is download from the the [sel-plugins](https://github.com/sel-project/sel-plugins9 repository.
-	
-	`sel <server> plugin update <plugin>`
-	
-		Updates a plugin, if it is installed through a .ssa file and in its `package.json` file there's a `release` field.
-	
-	`sel <server> plugin remove <plugin>`
-	
-		Removes a plugin if installed through a .ssa file.
 	
 * query
 
@@ -277,7 +209,7 @@ sudo bash install.sh
 	
 	Connects to a Minecraft or Minecraft: Pocket Edition server using the [RCON](http://wiki.vg/RCON) protocol.
 
-* shortcut (Linux only)
+* shortcut (posix only)
 
 	`sel shortcut <server>`
 
@@ -305,20 +237,8 @@ sudo bash install.sh
 	
 	The `-loop` switch will restart the server when it's stopped without being killed.
 	
-* uncompress
-
-	`sel uncompress <archive> <destination>`
-	
-	Decompress a sel archive created with the `sel compress` command.
-	
 * update
 	
-	`sel update utils`
+	`sel update <server> [-version=latest] [-user=current] [-repo=current]`
 	
-	Updates [sel-utils](https://github.com/sel-project/sel-utils), JSON files and libraries used by SEL.
-	
-	It's reccomended to run this command every time Minecraft or Minecraft: Pocket Edition are updated, in order to avoid SEL servers' deprecation errors.
-	
-	`sel update <server> [-version=latest]`
-	
-	Changes the version of a SEL Server. The version format is the same specified in the `init` command.
+	Changes the version of a SEL Server. The version/user/repo format is the same specified in the [init](#init) command.

@@ -27,7 +27,7 @@ import std.datetime : dur, StopWatch, AutoStart, Clock;
 import std.exception : enforce;
 import std.file;
 import std.json;
-import std.path : dirSeparator, pathSeparator, buildPath;
+import std.path : dirSeparator, pathSeparator, buildPath, buildNormalizedPath, absolutePath;
 import std.process;
 import std.regex : ctRegex, replaceAll;
 import std.stdio : writeln, readln;
@@ -35,24 +35,19 @@ import std.string;
 import std.typecons : Tuple, tuple;
 import std.utf : toUTF8;
 
-alias ServerTuple = Tuple!(string, "name", string, "location", string, "type", bool, "deleteable");
-
-enum __MANAGER__ = "5.0.0";
+enum __MANAGER__ = "5.0.1";
 enum __COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
 enum __LANG__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/lang/";
-enum __UTILS__ = "https://raw.githubusercontent.com/sel-project/sel-utils/master/release.sa";
 
 version(Windows) {
 	enum __EXE__ = ".exe";
-	enum __EXECUTABLE__ = "main.exe";
 } else {
 	enum __EXE__ = "";
-	enum __EXECUTABLE__ = "main";
 }
 
-enum commands = ["about", "build", "clear", "connect", "console", "convert", "delete", "init", "latest", "list", "locate", "open", "ping", "plugin", "query", "rcon", "scan", "shortcut", "social", "start", "update"];
+enum commands = ["about", "build", "connect", "console", "delete", "init", "latest", "list", "locate", "open", "ping", "plugin", "query", "rcon", "scan", "shortcut", "social", "start", "update"];
 
-enum noname = [".", "*", "all", "sel", "this", "manager", "lib", "libs", "util", "utils"];
+enum noname = [".", "*", "all", "sel", "this", "manager"];
 
 struct Settings {
 	
@@ -66,6 +61,17 @@ struct Settings {
 	
 }
 
+struct Server {
+
+	string name;
+	string location;
+	string type; //TODO convert to enum
+	bool deleteable = true;
+	string user, repo, version_;
+	bool edu, realm;
+
+}
+
 auto spawnCwd(in char[][] command, in char[] cwd) {
 	scope (failure)
 		writeln("When running ", command, " in ", cwd);
@@ -74,7 +80,7 @@ auto spawnCwd(in char[][] command, in char[] cwd) {
 
 auto spawnExe(in char[] exe, in char[][] args, in char[] cwd) {
 	version(Windows) {
-		return spawnShell("cd " ~ cwd ~ " " ~ args.join(" ") ~ " && " ~ exe ~ ".exe");
+		return spawnShell("cd " ~ cwd ~ " && ." ~ dirSeparator ~ exe ~ " " ~ args.join(" "));
 	} else {
 		// fails on windows
 		return spawnCwd(["." ~ dirSeparator ~ exe] ~ args, cwd);
@@ -99,18 +105,20 @@ void main(string[] args) {
 		Settings.servers = locationOf("%appdata%");
 		import core.sys.windows.shlobj : SHGetFolderPath, CHAR, NULL, S_OK, CSIDL_PERSONAL, MAX_PATH;
 		wchar[] docs = new wchar[MAX_PATH];
-		if(SHGetFolderPath(cast(void*)null, CSIDL_PERSONAL, cast(void*)null, 0, docs.ptr) == S_OK) {
-			Settings.servers = fromStringz((toUTF8(docs)).ptr);
-		}
+		assert(SHGetFolderPath(cast(void*)null, CSIDL_PERSONAL, cast(void*)null, 0, docs.ptr) == S_OK);
+		Settings.servers = fromStringz((toUTF8(docs)).ptr);
 	} else {
 		Settings.home = environment["HOME"];
 		Settings.servers = environment["HOME"];
 	}
 	if(!Settings.home.endsWith(dirSeparator)) Settings.home ~= dirSeparator;
 	if(!Settings.servers.endsWith(dirSeparator)) Settings.servers ~= dirSeparator;
-	Settings.config = Settings.home ~ ".sel" ~ dirSeparator;
+	version(Windows) {
+		Settings.config = Settings.home ~ "sel" ~ dirSeparator;
+	} else {
+		Settings.config = Settings.home ~ ".sel" ~ dirSeparator;
+	}
 	Settings.cache = Settings.config ~ "versions" ~ dirSeparator;
-	Settings.utils = Settings.config ~ "utils" ~ dirSeparator; 
 	Settings.servers ~= "sel" ~ dirSeparator;
 	
 	string launch = args[0];
@@ -133,7 +141,6 @@ void main(string[] args) {
 			writeln();
 			writeln("  about       print informations about a server");
 			writeln("  build       build a server");
-			writeln("  clear       clear a server's cache");
 			writeln("  connect     start a node server and connect it to an hub");
 			writeln("  delete      delete a server and its files");
 			writeln("  init        create a new server");
@@ -143,7 +150,7 @@ void main(string[] args) {
 			version(Posix) {
 				writeln("  shortcut    create a shortcut for a server (root permissions required)");
 			}
-			writeln("  start       start an hub server");
+			writeln("  start       start a lite server or an hub server");
 			writeln("  update      update a server");
 			writeln();
 			writeln("Commands for generic Minecraft and Minecraft: Pocket Edition servers:");
@@ -166,34 +173,11 @@ void main(string[] args) {
 			if(args.length > 1) {
 				auto server = getServerByName(args[1].toLower);
 				if(server.name != "") {
-					JSONValue[string] data;
-					if(server.type == "hub" || server.type == "full") {
-						try {
-							data["hub"] = parseJSON(executeCwd(["." ~ dirSeparator ~ "hub", "about"], server.location).output);
-						} catch(JSONException) {}
-					}
-					if(server.type == "node" || server.type == "full") {
-						try {
-							data["node"] = parseJSON(executeCwd(["." ~ dirSeparator ~ "node", "about"], server.location).output);
-						} catch(JSONException) {}
-					}
-					if(args.canFind("-json")) {
-						writeln(JSONValue(data).toString());
-					} else {
-						void prt(string what) {
-							auto about = what in data;
-							if(about) {
-								auto software = "software" in *about;
-								writeln(capitalize(what), ":");
-								if(software) {
-									writeln("  Name: ", (*software)["name"].str);
-									writeln("  Version: ", (*software)["version"].str, ((*software)["stable"].type == JSON_TYPE.FALSE ? "-dev" : ""));
-								}
-							}
-						}
-						prt("hub");
-						prt("node");
-					}
+					writeln("Name: ", server.name);
+					writeln("Location: ", server.location);
+					writeln("Type: ", server.type);
+					writeln("Version: ", server.version_);
+					writeln("Repository: ", server.user ~ "/" ~ server.repo);
 				} else {
 					writeln("There's no server named \"", args[1].toLower, "\"");
 				}
@@ -205,51 +189,21 @@ void main(string[] args) {
 			if(args.length > 1) {
 				auto server = getServerByName(args[1].toLower);
 				if(server.name != "") {
+					args = args[2..$];
+					foreach(ref arg ; args) {
+						if(arg == "-release") arg = "--build=release";
+					}
 					StopWatch timer = StopWatch(AutoStart.yes);
 					wait(spawnCwd(["dub", "init.d"], server.location ~ "build"));
-					wait(spawnCwd(["dub", "build", "--single", server.type ~ ".d"], server.location ~ "build")); //TODO custom args
+					wait(spawnCwd(["dub", "build", "--single", server.type ~ ".d"] ~ args, server.location ~ "build"));
 					timer.stop();
-					if(exists(server.location ~ "build/sel-" ~ server.type ~ __EXE__)) writeln("Done. Compilation took ", timer.peek.msecs.to!float / 1000, " seconds.");
+					if(exists(server.location ~ "build/" ~ server.type ~ __EXE__)) writeln("Done. Compilation and linking took ", timer.peek.msecs.to!float / 1000, " seconds.");
 					else writeln("Failed in ", timer.peek.msecs.to!float / 1000, " seconds.");
 				} else {
 					writeln("There's no server named \"", args[1].toLower, "\"");
 				}
 			} else {
 				writeln("Use: '", launch, " build <server> [compiler-options]'");
-			}
-			break;
-		case "clear":
-			if(args.length == 2) {
-				void del(string location) {
-					size_t deleted = 0;
-					if(exists(location) && location.isDir) {
-						foreach(string path ; dirEntries(location, SpanMode.breadth)) {
-							if(path.isFile) {
-								try {
-									remove(path);
-									deleted++;
-								} catch(FileException) {}
-							}
-						}
-					}
-					writeln("Deleted ", deleted, " files from ", location);
-				}
-				if(args[1] == "all") {
-					string tmp = tempDir();
-					if(!tmp.endsWith(dirSeparator)) tmp ~= dirSeparator;
-					del(tmp ~ "sel");
-					del(tmp ~ ".rdmd");
-					del(tmp ~ "rdmd-0");
-				} else {
-					auto server = getServerByName(args[1]);
-					if(server.name != "") {
-						del(server.location ~ ".hidden");
-					} else {
-						writeln("There's no server named \"", args[1].toLower, "\"");
-					}
-				}
-			} else {
-				writeln("Use: '", launch, " clear <server>'");
 			}
 			break;
 		case "connect":
@@ -274,7 +228,7 @@ void main(string[] args) {
 						ushort port = find("port", cast(ushort)28232);
 						bool main = find("main", true);
 						bool connect() {
-							return wait(spawnExe("sel-node", [name, ip, to!string(port), to!string(main), password], server.location)) == 0;
+							return wait(spawnExe("node", [name, ip, to!string(port), to!string(main), password], server.location ~ "build")) == 0;
 						}
 						if(args.canFind("-loop")) {
 							while(connect()) {}
@@ -323,14 +277,14 @@ void main(string[] args) {
 				if(server.name != "") {
 					if(server.deleteable) {
 						auto servers = serverTuples;
-						foreach(size_t i, ServerTuple s; servers) {
+						foreach(i, s; servers) {
 							if(s.name == server.name) {
 								servers = servers[0..i] ~ servers[i+1..$];
 								break;
 							}
 						}
 						saveServerTuples(servers);
-						if(args.length > 2 ? to!bool(args[2]) : true) {
+						if(args.length < 3 || to!bool(args[2])) {
 							foreach(string file ; dirEntries(server.location, SpanMode.breadth)) {
 								if(file.isFile) {
 									remove(file);
@@ -351,7 +305,6 @@ void main(string[] args) {
 		case "init":
 			if(args.length > 1) {
 				string name = args[1].toLower;
-				string type = args.length > 2 ? args[2].toLower : "lite";
 				args = args[2..$];
 				T find(T)(string key, T def) {
 					foreach(arg ; args) {
@@ -363,13 +316,11 @@ void main(string[] args) {
 					}
 					return def;
 				}
+				string type = find("type", "lite").toLower;
 				string path = find("path", Settings.servers ~ name);
 				string user = find("user", "sel-project");
 				string repo = find("repo", find("repository", find("project", "sel-server")));
-				string vers = find("version", "latest").toLower;
-				string[] flags;
-				if(args.canFind("-edu")) flags ~= "Edu";
-				if(args.canFind("-realm")) flags ~= "Realm";
+				string vers = find("version", "latest");
 				if(!nameExists(name)) {
 					if(!noname.canFind(name)) {
 						if(type == "hub" || type == "node" || type == "lite") {
@@ -377,10 +328,9 @@ void main(string[] args) {
 							mkdirRecurse(path);
 							if(!path.endsWith(dirSeparator)) path ~= dirSeparator;
 							if(vers != "none") {
-								install(launch, path, type, user, repo, vers, args.canFind("-local"));
+								vers = install(launch, path, type, user, repo, vers, args.canFind("-local"));
 							}
-							auto server = ServerTuple(name, path, type, !args.canFind("-no-delete"));
-							//TODO save flags
+							auto server = Server(name, path, type, !args.canFind("-no-delete"), user, repo, vers, args.canFind("-edu"), args.canFind("-realm"));
 							saveServerTuples(serverTuples ~ server);
 						} else {
 							writeln("Invalid type \"", type, "\". Choose between \"lite\", \"hub\", and \"node\"");
@@ -423,7 +373,7 @@ void main(string[] args) {
 			break;
 		case "list":
 			writeln("Servers managed by SEL Manager:");
-			foreach(ServerTuple server ; serverTuples) {
+			foreach(server ; serverTuples) {
 				writeln(server.name, " ", server.type, " ", server.location);
 			}
 			break;
@@ -598,9 +548,11 @@ void main(string[] args) {
 				if(server.name != "") {
 					immutable loop = args.canFind("-loop");
 					if(server.type == "hub" || server.type == "lite") {
+						args.length = 0;
+						if(server.edu) args ~= "-edu";
+						if(server.realm) args ~= "-realm";
 						do {
-							//TODO start with -edu and -realm
-							if(wait(spawnExe("sel-" ~ server.type, [], server.location ~ "build")) != 0) break; 
+							if(wait(spawnExe(server.type, args, server.location ~ "build")) != 0) break; 
 						} while(loop);
 					} else if(server.type == "node") {
 						writeln("Use '" ~ launch ~ " connect " ~ server.name ~ "' to start a node");
@@ -615,38 +567,28 @@ void main(string[] args) {
 		case "update":
 			if(args.length > 1) {
 				immutable name = args[1].toLower;
-				switch(name) {
-					case "*":
-					case "all":
-						wait(spawnProcess([launch, "update", "sel"]));
-						foreach(ServerTuple server ; serverTuples) {
-							wait(spawnProcess([launch, "update", server.name]));
-						}
-						break;
-					case "comp":
-					case "components":
-						foreach(comp ; dirEntries(Settings.config ~ "components", SpanMode.breadth)) {
-							if(comp.isFile) remove(comp);
-						}
-						break;
-					default:
-						auto server = getServerByName(name);
-						if(server.name.length) {
-							string find(string key, string def) {
-								foreach(arg ; args) {
-									if(arg.startsWith("-" ~ key.toLower ~ "=")) return arg[2+key.length..$];
-								}
-								return def;
+				auto servers = serverTuples;
+				bool updated = false;
+				foreach(ref server ; servers) {
+					if(server.name == name) {
+						string find(string key, string def) {
+							foreach(arg ; args) {
+								if(arg.startsWith("-" ~ key.toLower ~ "=")) return arg[2+key.length..$];
 							}
-							string path = find("path", Settings.servers ~ name);
-							string user = find("user", "sel-project");
-							string repo = find("repo", find("repository", find("project", "sel-server")));
-							string vers = find("version", "latest").toLower;
-							install(launch, server.location, server.type, user, repo, vers, false); //TODO get local from server's settings
-						} else {
-							writeln("There's no server named \"", args[1].toLower, "\"");
+							return def;
 						}
+						server.user = find("user", server.user);
+						server.repo = find("repo", find("repository", find("project", server.repo)));
+						string vers = find("version", "latest");
+						server.version_ = install(launch, server.location, server.type, server.user, server.repo, vers, !exists(server.location ~ ".sel" ~ dirSeparator ~ "libraries"));
+						updated = true;
 						break;
+					}
+				}
+				if(updated) {
+					saveServerTuples(servers);
+				} else {
+					writeln("There's no server named \"", args[1].toLower, "\"");
 				}
 			} else {
 				writeln("Use: '", launch, " update <server> [-user=sel-project] [-repo=sel-server] [-version=latest]'");
@@ -664,20 +606,28 @@ void printusage() {
 	writeln("Copyright (c) 2016-2017 SEL");
 	writeln();
 	//writeln("Website: http://selproject.org");
-	writeln("Github: https://github.com/sel-project");
+	writeln("Github: https://github.com/sel-project/sel-manager");
 	writeln();
 	writeln("Servers path: ", Settings.servers);
 	writeln("Managed servers: ", to!string(serverTuples.length));
 	writeln();
 }
 
-@property ServerTuple[] serverTuples() {
-	ServerTuple[] ret;
+@property Server[] serverTuples() {
+	Server[] ret;
 	if(exists(Settings.config ~ "sel.conf")) {
 		foreach(string s ; (cast(string)read(Settings.config ~ "sel.conf")).split(newline)) {
-			string[] spl = s.split(",");
-			if(spl.length >= 3) {
-				ret ~= ServerTuple(cast(string)Base64.decode(spl[0]), spl[1], spl[2], spl.length>=4?to!bool(spl[3]):true);
+			string[] spl = s.split(";");
+			if(spl.length >= 9) {
+				size_t i = 0;
+				T readNext(T)() {
+					static if(is(T == string)) {
+						return cast(T)Base64.decode(spl[i++]);
+					} else {
+						return to!T(spl[i++]);
+					}
+				}
+				ret ~= Server(readNext!string(), readNext!string(), readNext!string(), readNext!bool(), readNext!string(), readNext!string(), readNext!string(), readNext!bool(), readNext!bool());
 			}
 		}
 	}
@@ -685,29 +635,41 @@ void printusage() {
 }
 
 @property bool nameExists(string name) {
-	foreach(ServerTuple server ; serverTuples) {
+	foreach(server ; serverTuples) {
 		if(server.name == name) return true;
 	}
 	return name == ".";
 }
 
-@property ServerTuple getServerByName(string name) {
-	if(name == ".") {
-		string loc = locationOf(name);
-		if(!loc.endsWith(dirSeparator)) loc ~= dirSeparator;
-		return ServerTuple(loc, loc, "lite", true);
-	}
-	foreach(ServerTuple server ; serverTuples) {
+@property Server getServerByName(string name) {
+	foreach(server ; serverTuples) {
 		if(server.name == name) return server;
 	}
-	return ServerTuple.init;
+	return Server.init;
 }
 
-void saveServerTuples(ServerTuple[] servers) {
+void saveServerTuples(Server[] servers) {
 	mkdirRecurse(Settings.config);
-	string file = "### SEL MANAGER CONFIGURATION FILE" ~ newline;
-	foreach(ServerTuple server ; servers) {
-		file ~= Base64.encode(cast(ubyte[])server.name) ~ "," ~ server.location ~ "," ~ server.type ~ "," ~ server.deleteable.to!string ~ newline;
+	string file = "### SEL MANAGER CONFIGURATION FILE" ~ newline ~ "### DO NOT EDIT MANUALLY" ~ newline;
+	foreach(server ; servers) {
+		string[] data;
+		void writeNext(T)(T value) {
+			static if(is(T == string)) {
+				data ~= Base64.encode(cast(ubyte[])value);
+			} else {
+				data ~= to!string(value);
+			}
+		}
+		writeNext(server.name);
+		writeNext(server.location);
+		writeNext(server.type);
+		writeNext(server.deleteable);
+		writeNext(server.user);
+		writeNext(server.repo);
+		writeNext(server.version_);
+		writeNext(server.edu);
+		writeNext(server.realm);
+		file ~= join(data, ";") ~ newline;
 	}
 	write(Settings.config ~ "sel.conf", file);
 }
@@ -720,14 +682,14 @@ string locationOf(string loc) {
 	}
 }
 
-void install(string launch, string path, string type, string user, string repo, string vers, bool local) {
+string install(string launch, string path, string type, string user, string repo, string vers, bool local) {
 	if(vers.startsWith("~")) {
-		//TODO delete .git if exists?
-		// download from a branch directly in the server's folder
-		wait(spawnCwd(["git", "clone", "-b", vers[1..$], "--single-branch", "https://github.com/" ~ user ~ "/" ~ repo ~ ".git", "."], path));
-		foreach(del ; [".editorconfig", ".gitignore", ".travis.yml", "appveyor.yml", "CONTRIBUTING.md", "README.md"]) {
-			// unnecessary files
-			remove(path ~ del);
+		if(local || !exists(path ~ ".sel")) {
+			//TODO fails if directory is not empty
+			// download from a branch directly in the server's folder
+			wait(spawnCwd(["git", "clone", "-b", vers[1..$], "--single-branch", "https://github.com/" ~ user ~ "/" ~ repo ~ ".git", "."], path));
+		} else {
+			writeln("Cannot update a non-local server using git");
 		}
 	} else {
 		if(!vers.length || vers == "latest") {
@@ -738,18 +700,18 @@ void install(string launch, string path, string type, string user, string repo, 
 			mkdirRecurse(dest);
 			// download and unzip
 			if(!exists(dest ~ vers ~ ".zip")) {
-				//TODO use git clone if git is installed on the system
-				if(false) {
-					wait(spawnCwd(["git", "clone", "-b", "'v" ~ vers ~ "'", "--single-branch", "https://github.com/" ~ user ~ "/" ~ repo ~ ".git", vers], dest));
-				} else {
-					immutable dl = "https://github.com/" ~ user ~ "/" ~ repo ~ "/archive/v" ~ vers ~ ".zip";
-					mkdirRecurse(dest);
-					download(dl, dest ~ vers ~ ".zip");
-					//TODO unzip
-					
-					version(Windows) {
-						//TODO add version to .dub/version.json
-					}
+				immutable dl = "https://github.com/" ~ user ~ "/" ~ repo ~ "/archive/v" ~ vers ~ ".zip";
+				mkdirRecurse(dest);
+				download(dl, dest ~ vers ~ ".zip");
+			}
+			//TODO unzip
+			
+			version(Windows) {
+				// to display the version when building with dub
+				string json = JSONValue(["version": vers]).toString();
+				foreach(t ; ["common", "hub", "node"]) {
+					mkdirRecurse(dest ~ vers ~ t ~ ".dub");
+					write(dest ~ vers ~ t ~ ".dub" ~ dirSeparator ~ "version.json", json);
 				}
 			}
 		}
@@ -764,16 +726,45 @@ void install(string launch, string path, string type, string user, string repo, 
 				}
 			}
 		}
-		copy(dec ~ "res", path ~ "res");
 		copy(dec ~ "build", path ~ "build");
+		foreach(t ; ["hub", "node", "lite"]) {
+			if(type != t) remove(path ~ "build/" ~ t ~ ".d");
+		}
 		if(local) {
+			copy(dec ~ "res", path ~ "res");
 			copy(dec ~ "common", path ~ "common");
-			copy(dec ~ "hub", path ~ "hub");
-			copy(dec ~ "node", path ~ "node");
+			if(type == "hub" || type == "lite") copy(dec ~ "hub", path ~ "hub");
+			if(type == "node" || type == "lite") copy(dec ~ "node", path ~ "node");
 		} else {
-			//TODO edit init.d, hub.d, node.d and lite.d to point to right paths
+			void relocate(string type)(string file, string to) {
+				static if(dirSeparator == "\\") {
+					to = to.replace("\\", "\\\\");
+				}
+				auto data = cast(string)read(file);
+				data = data.replaceAll(ctRegex!(`"sel-` ~ type ~ `" path="([a-z\-\.\/]+)"`), `"sel-` ~ type ~ `" path="` ~ to ~ `"`);
+				write(file, data);
+			}
+			immutable build = path ~ "build" ~ dirSeparator;
+			immutable libs = buildNormalizedPath(absolutePath(dec)) ~ dirSeparator;
+			relocate!"common"(build ~ "init.d", libs ~ "common");
+			if(type == "hub") {
+				relocate!"common"(build ~ "hub.d", libs ~ "common");
+				relocate!"hub"(build ~ "hub.d", libs ~ "hub");
+			}
+			if(type == "node") {
+				relocate!"common"(build ~ "node.d", libs ~ "common");
+				relocate!"node"(build ~ "node.d", libs ~ "node");
+			}
+			if(type == "lite") {
+				relocate!"common"(build ~ "lite.d", libs ~ "common");
+				relocate!"hub"(build ~ "lite.d", libs ~ "hub");
+				relocate!"node"(build ~ "lite.d", libs ~ "node");
+			}
+			mkdirRecurse(path ~ ".sel");
+			write(path ~ ".sel" ~ dirSeparator ~ "libraries", libs);
 		}
 	}
+	return vers;
 }
 
 string[] components() {
