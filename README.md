@@ -34,7 +34,7 @@ sudo bash install.sh
 
 * about
 
-	`sel about <server>`
+	`sel about <server> [--json]`
 	
 	Prints informations about a server.
 	
@@ -49,7 +49,7 @@ sudo bash install.sh
 	
 * connect
 
-	`sel connect <server> [-ip=localhost] [-port=28232] [-name=<server>] [-password=] [-main=true]`
+	`sel connect <server> [--ip=localhost] [--port=28232] [--name=<server>] [--password=] [--main=true] [--loop]`
 	
 	Connects a node to an hub.
 
@@ -58,9 +58,9 @@ sudo bash install.sh
 	* ip
 
 		```
-		-ip=192.168.1.24
-		-ip=::1
-		-ip=sel.example.com
+		--ip=192.168.1.24
+		--ip=::1
+		--ip=sel.example.com
 		```
 
 		Indicates the ip of the hub. If not specified the node will try to connect to the local machine using the address `127.0.0.1`.
@@ -99,7 +99,7 @@ sudo bash install.sh
 	
 * init
 
-	`sel init <server> [-type=lite] [-path=sel/<server>] [-version=latest] [-user=sel-project] [-repo=sel-server] [-edu] [-realm]`
+	`sel init <server> [--type=lite] [--path=sel/<server>] [--version=latest] [--user=sel-project] [--repo=sel-server] [-edu] [-realm] [--local]`
 	
 	Creates a new SEL Server, giving it a new name that will be used with other commands to manage it.
 	
@@ -122,16 +122,16 @@ sudo bash install.sh
 	* path
 	
 		```
-		-path=.
-		-path=../example
-		-path=%appdata%/example
+		--path=.
+		--path=../example
+		--path=%appdata%/example
 		```
 	
 		Specifies the installation path for the server. By default it's `Documents\sel\<server>` on Windows and `~/sel/<server>` on Linux. If the path already exists every file needed by SEL will be overwritten.
 	
 	* version
 	
-		Specifies the version of SEL Server to be used. It can be a version in format `major.minor.patch` (e.g. `-version=1.0.0`), `latest` (for the latest version), `none` (nothing will be downloaded and the source code should be moved in the installation folder manually) or a branch, for example `~master` or `~test-new-api`.
+		Specifies the version of SEL Server to be used. It can be a version in format `major.minor.patch` (e.g. `--version=1.0.0`), `latest` (for the latest version), `none` (nothing will be downloaded and the source code should be moved in the installation folder manually) or a branch, for example `~master` or `~test-new-api`.
 	
 	* user
 	
@@ -231,7 +231,7 @@ sudo bash install.sh
 	
 * start
 
-	`sel start <server> [-loop]`
+	`sel start <server> [--loop]`
 	
 	Starts an hub or a full SEL Server.
 	
@@ -239,6 +239,6 @@ sudo bash install.sh
 	
 * update
 	
-	`sel update <server> [-version=latest] [-user=current] [-repo=current]`
+	`sel update <server> [--version=latest] [--user=current] [--repo=current]`
 	
 	Changes the version of a SEL Server. The version/user/repo format is the same specified in the [init](#init) command.

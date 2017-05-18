@@ -173,11 +173,15 @@ void main(string[] args) {
 			if(args.length > 1) {
 				auto server = getServerByName(args[1].toLower);
 				if(server.name != "") {
-					writeln("Name: ", server.name);
-					writeln("Location: ", server.location);
-					writeln("Type: ", server.type);
-					writeln("Version: ", server.version_);
-					writeln("Repository: ", server.user ~ "/" ~ server.repo);
+					if(args.canFind("--json")) {
+						//TODO
+					} else {
+						writeln("Name: ", server.name);
+						writeln("Location: ", server.location);
+						writeln("Type: ", server.type);
+						writeln("Version: ", server.version_);
+						writeln("Repository: ", server.user ~ "/" ~ server.repo);
+					}
 				} else {
 					writeln("There's no server named \"", args[1].toLower, "\"");
 				}
@@ -194,11 +198,23 @@ void main(string[] args) {
 						if(arg == "-release") arg = "--build=release";
 					}
 					StopWatch timer = StopWatch(AutoStart.yes);
-					wait(spawnCwd(["dub", "init.d"], server.location ~ "build"));
-					wait(spawnCwd(["dub", "build", "--single", server.type ~ ".d"] ~ args, server.location ~ "build"));
+					if(!exists(server.location ~ "build" ~ dirSeparator ~ "init" ~ __EXE__)) {
+						wait(spawnCwd(["dub", "build", "--single", "init.d"], server.location ~ "build"));
+					}
+					auto exit = wait(spawnExe("init", [], server.location ~ "build"));
+					if(exit == 0) exit = wait(spawnCwd(["dub", "build", "--single", server.type ~ ".d"] ~ args, server.location ~ "build"));
 					timer.stop();
-					if(exists(server.location ~ "build/" ~ server.type ~ __EXE__)) writeln("Done. Compilation and linking took ", timer.peek.msecs.to!float / 1000, " seconds.");
-					else writeln("Failed in ", timer.peek.msecs.to!float / 1000, " seconds.");
+					if(exit == 0) {
+						if(!exists(server.location ~ "sel.json")) {
+							args = ["--init"];
+							if(server.edu) args ~= "-edu";
+							if(server.realm) args ~= "-realm";
+							wait(spawnExe(server.type, args, server.location ~ "build"));
+						}
+						writeln("Done. Compilation and linking took ", timer.peek.msecs.to!float / 1000, " seconds.");
+					} else {
+						writeln("Failed with code ", exit, " in ", timer.peek.msecs.to!float / 1000, " seconds.");
+					}
 				} else {
 					writeln("There's no server named \"", args[1].toLower, "\"");
 				}
@@ -212,25 +228,21 @@ void main(string[] args) {
 				if(server.name != "") {
 					if(server.type == "node") {
 						args = args[2..$];
-						T find(T)(string key, T def) {
-							foreach(arg ; args) {
-								if(arg.startsWith("-" ~ key.toLower ~ "=")) {
-									try {
-										return to!T(arg[2+key.length..$]);
-									} catch(ConvException) {}
-								}
+						bool loop = false;
+						bool name = false;
+						for(size_t i=0; i<args.length; i++) {
+							if(args[i] == "-loop") {
+								loop = true;
+								args = args[0..i] ~ args[i+1..$];
+							} else if(args[i].startsWith("--name=") || args[i].startsWith("-n=")) {
+								name = true;
 							}
-							return def;
 						}
-						string name = find("name", server.name);
-						string password = find("password", "");
-						string ip = find("ip", "localhost");
-						ushort port = find("port", cast(ushort)28232);
-						bool main = find("main", true);
+						if(!name) args ~= "--name=" ~ server.name;
 						bool connect() {
-							return wait(spawnExe("node", [name, ip, to!string(port), to!string(main), password], server.location ~ "build")) == 0;
+							return wait(spawnExe("node", args, server.location ~ "build")) != 0;
 						}
-						if(args.canFind("-loop")) {
+						if(loop) {
 							while(connect()) {}
 						} else {
 							connect();
@@ -242,7 +254,7 @@ void main(string[] args) {
 					writeln("There's no server name \"", args[1].toLower, "\"");
 				}
 			} else {
-				writeln("Use: '", launch, " connect <server> [-name=<server>] [-password=] [-ip=localhost] [-port=28232] [-main=true] [-loop]'");
+				writeln("Use: '", launch, " connect <server> [--name=<server>] [--password=] [--ip=localhost] [--port=28232] [--main=true] [-loop]'");
 			}
 			break;
 		case "console":
@@ -308,9 +320,9 @@ void main(string[] args) {
 				args = args[2..$];
 				T find(T)(string key, T def) {
 					foreach(arg ; args) {
-						if(arg.startsWith("-" ~ key.toLower ~ "=")) {
+						if(arg.startsWith("--" ~ key.toLower ~ "=")) {
 							try {
-								return to!T(arg[2+key.length..$]);
+								return to!T(arg[3+key.length..$]);
 							} catch(ConvException) {}
 						}
 					}
@@ -328,9 +340,9 @@ void main(string[] args) {
 							mkdirRecurse(path);
 							if(!path.endsWith(dirSeparator)) path ~= dirSeparator;
 							if(vers != "none") {
-								vers = install(launch, path, type, user, repo, vers, args.canFind("-local"));
+								vers = install(launch, path, type, user, repo, vers, args.canFind("--local"));
 							}
-							auto server = Server(name, path, type, !args.canFind("-no-delete"), user, repo, vers, args.canFind("-edu"), args.canFind("-realm"));
+							auto server = Server(name, path, type, !args.canFind("--no-delete"), user, repo, vers, args.canFind("-edu"), args.canFind("-realm"));
 							saveServerTuples(serverTuples ~ server);
 						} else {
 							writeln("Invalid type \"", type, "\". Choose between \"lite\", \"hub\", and \"node\"");
@@ -349,10 +361,10 @@ void main(string[] args) {
 			string user = "sel-project";
 			string repo = "sel-server";
 			foreach(arg ; args) {
-				if(arg.startsWith("-user=")) {
-					user = arg[6..$];
-				} else if(arg.startsWith("-repo=")) {
-					repo = arg[6..$];
+				if(arg.startsWith("--user=")) {
+					user = arg[7..$];
+				} else if(arg.startsWith("--repo=")) {
+					repo = arg[7..$];
 				}
 			}
 			immutable dir = tempDir() ~ dirSeparator ~ "sel" ~ dirSeparator ~ user ~ dirSeparator ~ repo ~ dirSeparator;
@@ -546,14 +558,18 @@ void main(string[] args) {
 			if(args.length > 1) {
 				auto server = getServerByName(args[1].toLower);
 				if(server.name != "") {
-					immutable loop = args.canFind("-loop");
+					immutable loop = args.canFind("--loop");
 					if(server.type == "hub" || server.type == "lite") {
-						args.length = 0;
-						if(server.edu) args ~= "-edu";
-						if(server.realm) args ~= "-realm";
-						do {
-							if(wait(spawnExe(server.type, args, server.location ~ "build")) != 0) break; 
-						} while(loop);
+						if(exists(server.location ~ "build" ~ dirSeparator ~ server.type ~ __EXE__)) {
+							args.length = 0;
+							if(server.edu) args ~= "-edu";
+							if(server.realm) args ~= "-realm";
+							do {
+								if(wait(spawnExe(server.type, args, server.location ~ "build")) == 0) break; 
+							} while(loop);
+						} else {
+							writeln("Cannot find an executable file for the server. Use '", launch, " build ", server.name, "' to create one");
+						}
 					} else if(server.type == "node") {
 						writeln("Use '" ~ launch ~ " connect " ~ server.name ~ "' to start a node");
 					}
@@ -561,7 +577,7 @@ void main(string[] args) {
 					writeln("There's no server named \"", args[1].toLower, "\"");
 				}
 			} else {
-				writeln("Use: '", launch, " start <server> [-loop]'");
+				writeln("Use: '", launch, " start <server> [--loop]'");
 			}
 			break;
 		case "update":
@@ -573,7 +589,7 @@ void main(string[] args) {
 					if(server.name == name) {
 						string find(string key, string def) {
 							foreach(arg ; args) {
-								if(arg.startsWith("-" ~ key.toLower ~ "=")) return arg[2+key.length..$];
+								if(arg.startsWith("--" ~ key.toLower ~ "=")) return arg[3+key.length..$];
 							}
 							return def;
 						}
@@ -591,7 +607,7 @@ void main(string[] args) {
 					writeln("There's no server named \"", args[1].toLower, "\"");
 				}
 			} else {
-				writeln("Use: '", launch, " update <server> [-user=sel-project] [-repo=sel-server] [-version=latest]'");
+				writeln("Use: '", launch, " update <server> [--user=current] [--repo=current] [--version=latest]'");
 			}
 			break;
 		default:
@@ -684,10 +700,12 @@ string locationOf(string loc) {
 
 string install(string launch, string path, string type, string user, string repo, string vers, bool local) {
 	if(vers.startsWith("~")) {
-		if(local || !exists(path ~ ".sel")) {
+		if(!checkGit()) {
+			writeln("Git is not installed on this machine");
+		} else if(local || !exists(path ~ ".sel")) {
 			//TODO fails if directory is not empty
 			// download from a branch directly in the server's folder
-			wait(spawnCwd(["git", "clone", "-b", vers[1..$], "--single-branch", "https://github.com/" ~ user ~ "/" ~ repo ~ ".git", "."], path));
+			wait(spawnCwd(["git", "clone", "--branch", vers[1..$], "--single-branch", "https://github.com/" ~ user ~ "/" ~ repo ~ ".git", "."], path));
 		} else {
 			writeln("Cannot update a non-local server using git");
 		}
@@ -698,23 +716,34 @@ string install(string launch, string path, string type, string user, string repo
 		immutable dest = Settings.cache ~ user ~ dirSeparator ~ repo ~ dirSeparator;
 		if(!exists(dest ~ vers)) {
 			mkdirRecurse(dest);
-			// download and unzip
-			if(!exists(dest ~ vers ~ ".zip")) {
-				immutable dl = "https://github.com/" ~ user ~ "/" ~ repo ~ "/archive/v" ~ vers ~ ".zip";
-				mkdirRecurse(dest);
-				download(dl, dest ~ vers ~ ".zip");
-			}
-			//TODO unzip
-			
-			version(Windows) {
-				// to display the version when building with dub
-				string json = JSONValue(["version": vers]).toString();
-				foreach(t ; ["common", "hub", "node"]) {
-					mkdirRecurse(dest ~ vers ~ t ~ ".dub");
-					write(dest ~ vers ~ t ~ ".dub" ~ dirSeparator ~ "version.json", json);
+			if(checkGit()) {
+				wait(spawnCwd(["git", "clone", "-b", "'" ~ vers ~ "'", "--single-branch", "https://github.com/" ~ user ~ "/" ~ repo ~ ".git", vers], dest));
+			} else {
+				// download and unzip
+				if(!exists(dest ~ vers ~ ".zip")) {
+					immutable dl = "https://github.com/" ~ user ~ "/" ~ repo ~ "/archive/v" ~ vers ~ ".zip";
+					mkdirRecurse(dest);
+					download(dl, dest ~ vers ~ ".zip");
+				}
+				//TODO unzip
+				
+				version(Windows) {
+					// to display the version when building with dub
+					string json = JSONValue(["version": vers]).toString();
+					foreach(t ; ["common", "hub", "node"]) {
+						mkdirRecurse(dest ~ vers ~ t ~ ".dub");
+						write(dest ~ vers ~ t ~ ".dub" ~ dirSeparator ~ "version.json", json);
+					}
 				}
 			}
 		}
+		// delete executables
+		void del(string exe) {
+			immutable path = dest ~ "build" ~ dirSeparator ~ exe ~ __EXE__;
+			if(exists(path)) remove(path);
+		}
+		del("init");
+		del(type);
 		// copy files from vers/ to path/
 		immutable dec = dest ~ vers ~ dirSeparator;
 		void copy(string from, string to) {
@@ -765,6 +794,10 @@ string install(string launch, string path, string type, string user, string repo
 		}
 	}
 	return vers;
+}
+
+bool checkGit() {
+	return executeCwd(["git", "--version"], ".").status == 0;
 }
 
 string[] components() {
