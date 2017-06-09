@@ -35,7 +35,7 @@ import std.string;
 import std.typecons : Tuple, tuple;
 import std.utf : toUTF8;
 
-enum __MANAGER__ = "5.0.1";
+enum __MANAGER__ = "5.0.3";
 enum __COMPONENTS__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/components/";
 enum __LANG__ = "https://raw.githubusercontent.com/sel-project/sel-manager/master/lang/";
 
@@ -198,14 +198,16 @@ void main(string[] args) {
 						if(arg == "-release") arg = "--build=release";
 					}
 					StopWatch timer = StopWatch(AutoStart.yes);
-					if(!exists(server.location ~ "build" ~ dirSeparator ~ "init" ~ __EXE__)) {
-						wait(spawnCwd(["dub", "build", "--single", "init.d"], server.location ~ "build"));
+					int exit;
+					if(!exists(server.location ~ "init" ~ dirSeparator ~ "init" ~ __EXE__)) {
+						exit = wait(spawnCwd(["dub", "run"], server.location ~ "init"));
+					} else {
+						exit = wait(spawnExe("init", [], server.location ~ "init"));
 					}
-					auto exit = wait(spawnExe("init", [], server.location ~ "build"));
-					if(exit == 0) exit = wait(spawnCwd(["dub", "build", "--single", server.type ~ ".d"] ~ args, server.location ~ "build"));
+					if(exit == 0) exit = wait(spawnCwd(["dub", "build", "--config=" ~ server.type] ~ args, server.location ~ "build"));
 					timer.stop();
 					if(exit == 0) {
-						if(!exists(server.location ~ "sel.json")) {
+						if(!exists(server.location ~ "server.toml")) {
 							args = ["--init"];
 							if(server.edu) args ~= "-edu";
 							if(server.realm) args ~= "-realm";
@@ -699,22 +701,27 @@ string locationOf(string loc) {
 }
 
 string install(string launch, string path, string type, string user, string repo, string vers, bool local) {
+	string source;
 	if(vers.startsWith("~")) {
 		if(!checkGit()) {
 			writeln("Git is not installed on this machine");
+			return "";
 		} else if(local || !exists(path ~ ".sel")) {
 			//TODO fails if directory is not empty
 			// download from a branch directly in the server's folder
 			wait(spawnCwd(["git", "clone", "--branch", vers[1..$], "--single-branch", "https://github.com/" ~ user ~ "/" ~ repo ~ ".git", "."], path));
+			source = path;
 		} else {
 			writeln("Cannot update a non-local server using git");
+			return "";
 		}
 	} else {
 		if(!vers.length || vers == "latest") {
 			vers = execute([launch, "latest"]).output.strip;
 		}
 		immutable dest = Settings.cache ~ user ~ dirSeparator ~ repo ~ dirSeparator;
-		if(!exists(dest ~ vers)) {
+		source = dest ~ vers ~ dirSeparator;
+		if(!exists(source)) {
 			mkdirRecurse(dest);
 			if(checkGit()) {
 				wait(spawnCwd(["git", "clone", "-b", "'" ~ vers ~ "'", "--single-branch", "https://github.com/" ~ user ~ "/" ~ repo ~ ".git", vers], dest));
@@ -729,21 +736,26 @@ string install(string launch, string path, string type, string user, string repo
 				
 				version(Windows) {
 					// to display the version when building with dub
-					string json = JSONValue(["version": vers]).toString();
-					foreach(t ; ["common", "hub", "node"]) {
-						mkdirRecurse(dest ~ vers ~ t ~ ".dub");
-						write(dest ~ vers ~ t ~ ".dub" ~ dirSeparator ~ "version.json", json);
-					}
+					mkdirRecurse(source ~ ".dub");
+					write(source ~ ".dub" ~ dirSeparator ~ "version.json", JSONValue(["version": vers]).toString());
 				}
 			}
 		}
-		// delete executables
-		void del(string exe) {
-			immutable path = dest ~ "build" ~ dirSeparator ~ exe ~ __EXE__;
-			if(exists(path)) remove(path);
+		// delete cached files
+		void del(string dir) {
+			immutable p = path ~ dir;
+			if(exists(p) && isDir(p)) {
+				foreach(string file ; dirEntries(p, SpanMode.breadth)) {
+					if(file.isFile) remove(file);
+				}
+			}
 		}
+		del(".sel");
+		del("build");
 		del("init");
-		del(type);
+		del("common");
+		del("hub");
+		del("node");
 		// copy files from vers/ to path/
 		immutable dec = dest ~ vers ~ dirSeparator;
 		void copy(string from, string to) {
@@ -756,43 +768,23 @@ string install(string launch, string path, string type, string user, string repo
 			}
 		}
 		copy(dec ~ "build", path ~ "build");
-		foreach(t ; ["hub", "node", "lite"]) {
-			if(type != t) remove(path ~ "build/" ~ t ~ ".d");
-		}
+		copy(dec ~ "init", path ~ "init");
 		if(local) {
 			copy(dec ~ "res", path ~ "res");
 			copy(dec ~ "common", path ~ "common");
 			if(type == "hub" || type == "lite") copy(dec ~ "hub", path ~ "hub");
 			if(type == "node" || type == "lite") copy(dec ~ "node", path ~ "node");
 		} else {
-			void relocate(string type)(string file, string to) {
-				static if(dirSeparator == "\\") {
-					to = to.replace("\\", "\\\\");
-				}
-				auto data = cast(string)read(file);
-				data = data.replaceAll(ctRegex!(`"sel-` ~ type ~ `" path="([a-z\-\.\/]+)"`), `"sel-` ~ type ~ `" path="` ~ to ~ `"`);
-				write(file, data);
-			}
-			immutable build = path ~ "build" ~ dirSeparator;
 			immutable libs = buildNormalizedPath(absolutePath(dec)) ~ dirSeparator;
-			relocate!"common"(build ~ "init.d", libs ~ "common");
-			if(type == "hub") {
-				relocate!"common"(build ~ "hub.d", libs ~ "common");
-				relocate!"hub"(build ~ "hub.d", libs ~ "hub");
-			}
-			if(type == "node") {
-				relocate!"common"(build ~ "node.d", libs ~ "common");
-				relocate!"node"(build ~ "node.d", libs ~ "node");
-			}
-			if(type == "lite") {
-				relocate!"common"(build ~ "lite.d", libs ~ "common");
-				relocate!"hub"(build ~ "lite.d", libs ~ "hub");
-				relocate!"node"(build ~ "lite.d", libs ~ "node");
+			foreach(dir ; ["build", "init"]) {
+				immutable file = path ~ dir ~ dirSeparator ~ "dub.sdl";
+				write(file, replace(cast(string)read(file), "\"..\"", "\"" ~ libs.replace("\\", "\\\\") ~ "\""));
 			}
 			mkdirRecurse(path ~ ".sel");
 			write(path ~ ".sel" ~ dirSeparator ~ "libraries", libs);
 		}
 	}
+	mkdirRecurse(path ~ "plugins");
 	return vers;
 }
 
