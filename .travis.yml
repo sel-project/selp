@@ -1,14 +1,5 @@
 language: d
 
 d:
- - dmd
- 
-script:
- - rdmd --build-only manager.d
- - cd components
- - dub build --single console.d
- - dub build --single ping.d
- - dub build --single query.d
- - dub build --single rcon.d
- - dub build --single scan.d
- - dub build --single social.d
+  - dmd
+  - ldc

@@ -30,6 +30,7 @@ void main(string[] args) {
 	Manager manager = new Manager(args);
 	manager.register("help", &help);
 	manager.register("ping", &ping);
+	manager.register("server", &server);
 	manager.execute();
 
 }

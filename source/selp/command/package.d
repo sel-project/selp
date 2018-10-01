@@ -24,3 +24,4 @@ module selp.command;
 
 public import selp.command.help : help;
 public import selp.command.ping : ping;
+public import selp.command.server : server;

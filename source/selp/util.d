@@ -22,7 +22,9 @@
  */
 module selp.util;
 
-import std.string : toLower;
+import std.path : dirSeparator;
+import std.process : executeShell;
+import std.string : toLower, strip, startsWith;
 
 import terminal : Terminal, Foreground, Color, reset;
 
@@ -31,6 +33,8 @@ class Manager {
 	public immutable string exe;
 	public immutable string command;
 	public immutable string[] args;
+
+	public immutable string home;
 
 	public Terminal terminal;
 
@@ -45,6 +49,13 @@ class Manager {
 		this.exe = args[0];
 		this.command = args[1];
 		this.args = args[2..$].idup;
+
+		version(Windows) {
+			this.home = locationOf("%appdata%") ~ dirSeparator ~ "selp" ~ dirSeparator;
+		} else {
+			import std.process : environment;
+			this.home = environment["HOME"] ~ dirSeparator ~ ".selp" ~ dirSeparator;
+		}
 
 		this.terminal = new Terminal();
 
@@ -67,4 +78,19 @@ class Manager {
 
 void writeError(Manager manager, string error) {
 	manager.terminal.writeln(Foreground(Color.brightRed), error, reset);
+}
+
+string locationOf(string location) {
+	version(Windows) {
+		return executeShell("cd " ~ location ~ " && cd").output.strip;
+	} else {
+		return executeShell("cd " ~ location ~ " && pwd").output.strip;
+	}
+}
+
+string find(string search, string[] args, lazy string default_) {
+	foreach(arg ; args) {
+		if(arg.startsWith("--" ~ search ~ "=")) return arg[search.length+3..$];
+	}
+	return default_;
 }
