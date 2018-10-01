@@ -12,7 +12,7 @@
  * See the GNU Lesser General Public License for more details.
  * 
  */
-module manager;
+module selp.main;
 
 import core.thread : Thread;
 
@@ -98,7 +98,7 @@ version (Posix) void makeExecutable(string path) {
 	path.setAttributes(path.getAttributes | S_IXUSR);
 }
 
-void main(string[] args) {
+void selp(string[] args) {
 
 	version(Windows) {
 		Settings.home = locationOf("%appdata%"); //TODO get with windows API

@@ -1,0 +1,4 @@
+name "selp"
+description "Command line utilities for Minecraft (Bedrock Engine) and Minecraft: Java Edition"
+authors "sel-project"
+targetType "application"
