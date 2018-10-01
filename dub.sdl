@@ -1,4 +1,6 @@
 name "selp"
 description "Command line utilities for Minecraft (Bedrock Engine) and Minecraft: Java Edition"
 authors "sel-project"
-targetType "application"
+targetType "executable"
+dependency "sel-client" version="~>0.2"
+dependency "sel-util:terminal" version="~>0.5"
